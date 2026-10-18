@@ -893,6 +893,15 @@ const server = http.createServer(async (req, res) => {
     if (p === '/v1/models') return json(res, 200, { object: 'list', data: (await listModels()).map(m => ({ id: m.name, object: 'model', owned_by: 'pholama' })) });
     if (p === '/v1/chat/completions' && req.method === 'POST') return openaiChat(req, res, await body(req));
     if (p === '/api/caps') { const m = u.searchParams.get('model') || ''; const c = await modelCaps(m); return json(res, 200, { ...c, nativeThinking: !!c.thinking, thinking: true, search: c.tools, mcp: c.tier === 'good', github: c.tools }); }   // thinking works on every model now: models without a native mode get the host reasoning pass
+    // RetroStudio encoder: Luau text -> CoolFormat string for the RetroStudio plugin. Reads the code, never runs it.
+    if (p === '/api/retro/encode' && req.method === 'POST') {
+      const b = await body(req); const src = String((b && b.source) || '');
+      if (!src.trim()) return json(res, 400, { error: 'Paste or generate some Luau first.' });
+      if (src.length > 200000) return json(res, 413, { error: 'That script is too long (max 200,000 characters).' });
+      try { const r = require('./retroencoder').compile(src); if (!r.blocks) return json(res, 422, { error: 'Nothing in that script could be turned into blocks.', skipped: r.skipped.slice(0, 40) }); return json(res, 200, { encoded: r.encoded, blocks: r.blocks, skipped: r.skipped.slice(0, 40) }); }
+      catch { return json(res, 500, { error: 'The encoder could not process that script.' }); }
+    }
+    if (p === '/api/retro/blocks') return json(res, 200, { blocks: require('./retroencoder').blockNames() });
     if (p.startsWith('/api/studio/ws')) {   // Studio workspace: runs, activity, diffs, problems, tests (studioroutes.js)
       const sr = require('./studioroutes');
       const models = (await listModels().catch(() => [])).map(m => ({ id: m.name, name: m.name, tools: m.tools !== false }));
