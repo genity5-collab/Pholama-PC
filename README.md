@@ -152,13 +152,13 @@ Pholama opens on a **Dashboard**: the newest version, what's new, the newest mod
 
 ## Releasing an update (for the maker)
 
-The website (`docs/`, used on phones) and the PC app (`web/`) must always show the same newest models and version. Follow this every time:
+This repository is the PC app only. The website lives in a separate private repository. Follow this every time you release:
 
 1. Add or change models in `models.pc.json`. Give each one a `toolTier` (`good`, `basic` or `none`), an `added` date, and a `released` month (`YYYY-MM`) if you know it. A model with no `released` month is simply never listed as "new".
 2. Add a new entry at the **top** of `releases.json` (version, date, title, notes) and set `latest`.
 3. Set the same version in `package.json`.
-4. Run `npm run sync-site`. It copies the full model list and version history into both `docs/` and `web/`.
-5. Run `npm test`. It fails if the website or the PC app is out of date, so a release cannot go out with an old list.
+4. Run `npm test` and make sure it passes.
+5. Tell the website repository to publish the same version and model list, so the site and the PC app stay in step.
 
 The PC updater reads `package.json` from the default branch and downloads that branch's archive; a GitHub Release or tag by itself does not publish an update to the app.
 
@@ -236,4 +236,4 @@ The PC app checks GitHub about every minute while it is open and every 5 hours w
 - [`models.json`](models.json) the model list
 - Ollama and OpenAI compatible API for games and sites: see [docs-md/API.md](docs-md/API.md) (or open `http://localhost:11435/api/docs` while Pholama runs)
 - [`server/tools2.js`](server/tools2.js) the workspace file tools and helpers
-- [`web/dashboard.js`](web/dashboard.js) the dashboard (a copy lives in `docs/`), [`scripts/sync-site.js`](scripts/sync-site.js) keeps the website and PC app in step
+- [`web/dashboard.js`](web/dashboard.js) the dashboard
