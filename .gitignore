@@ -1,0 +1,7 @@
+node_modules
+*.gguf
+*.part
+bin/
+# private operator notes (never published)
+PRIVATE-OPERATOR-NOTES.md
+private/

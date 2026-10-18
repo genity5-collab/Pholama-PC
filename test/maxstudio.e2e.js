@@ -1,0 +1,85 @@
+// Agent Max as the brain in Studio, on the real server with a fake cloud. Checks: it builds a real file through the Studio tools,
+// the token is sent, the extra credits are charged, the step cap holds, errors are friendly, and a limit falls back to the local model for free.
+const { spawn } = require('child_process'), fs = require('fs'), os = require('os'), path = require('path'), http = require('http');
+const root = path.join(__dirname, '..'); const wait = ms => new Promise(r => setTimeout(r, ms));
+let bad = 0; const ok = (n, c, x) => { console.log((c ? 'PASS ' : 'FAIL ') + n + (c ? '' : '  -> ' + String(x).slice(0, 400))); if (!c) bad++; };
+async function main() {
+  const calls = [], seen = []; let mode = 'ok', daily = 0, okCalls = 0;
+  const cloud = http.createServer((q, s) => { let b = ''; q.on('data', c => b += c); q.on('end', () => {
+    calls.push({ auth: q.headers.authorization, body: b }); s.setHeader('Content-Type', 'application/json');
+    // the real cloud rule: a PC with a tool-capable local AI gets a daily cap of 1, otherwise 10. Studio must send the TRUE answer, not always true.
+    if (mode === 'cap') { let j = {}; try { j = JSON.parse(b); } catch {} seen.push(j.localTools); const cap = j.localTools === true ? 1 : 10;
+      if (daily >= cap) { s.statusCode = 429; s.end(JSON.stringify({ error: 'daily', code: 'limit-day' })); return; }
+      daily++; s.end(JSON.stringify({ reply: 'Cap test answer ' + daily })); return; }
+    if (mode === 'limit') { s.statusCode = 429; s.end(JSON.stringify({ error: 'daily limit', code: 'limit-day' })); return; }
+    if (mode === 'login') { s.statusCode = 401; s.end(JSON.stringify({ error: 'Log in', code: 'login' })); return; }
+    const sawResult = /Wrote|wrote|saved|OK/i.test(b.split('"role":"user"').slice(-1)[0] || '') && /tool result|Tool result|TOOL RESULT/.test(b);
+    const reply = mode === 'loop' ? '<tool>{"name":"studio_write","args":{"project":"mx","file":"loop' + calls.length + '.txt","content":"x' + calls.length + '"}}</tool>' : sawResult ? 'All done, Max built it.' : '<tool>{"name":"studio_write","args":{"project":"mx","file":"hello.html","content":"<h1>From Max</h1>"}}</tool>';
+    okCalls++; s.end(JSON.stringify({ reply, day_used: okCalls, day_cap: 10, month_used: 20 + okCalls, month_cap: 30 })); }); }).listen(0, '127.0.0.1');
+  await wait(200); const cport = cloud.address().port;
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ph-max-')), bin = path.join(home, 'bin'), models = path.join(home, 'm'); fs.mkdirSync(bin, { recursive: true }); fs.mkdirSync(models, { recursive: true });
+  const cat = JSON.parse(fs.readFileSync(path.join(root, 'models.pc.json'), 'utf8')); const lm = cat.find(x => x.id === 'llama3.2-3b'); fs.writeFileSync(path.join(models, lm.file), 'x');
+  const script = path.join(home, 'fake.js');
+  fs.writeFileSync(script, `const http=require('http');const a=process.argv.slice(2);const port=+a[a.indexOf('--port')+1];
+http.createServer((q,s)=>{let b='';q.on('data',c=>b+=c);q.on('end',()=>{s.setHeader('Content-Type','application/json');if(q.url==='/health'){s.end('{"status":"ok"}');return}
+const out='Local model answering for free.';
+if(/"stream":true/.test(b)){s.setHeader('Content-Type','text/event-stream');s.write('data: '+JSON.stringify({choices:[{delta:{content:out}}]})+'\\n\\n');s.write('data: [DONE]\\n\\n');s.end();return}
+s.end(JSON.stringify({choices:[{message:{content:out}}]}))})}).listen(port,'127.0.0.1');`);
+  fs.copyFileSync(process.execPath, path.join(home, 'real')); fs.chmodSync(path.join(home, 'real'), 0o755);
+  fs.writeFileSync(path.join(bin, 'llama-server'), `#!/bin/bash\nexec -a llama-server "${path.join(home, 'real')}" "${script}" "$@"\n`); fs.chmodSync(path.join(bin, 'llama-server'), 0o755);
+  const port = 27000 + Math.floor(Math.random() * 4000);
+  const srv = spawn(process.execPath, [path.join(root, 'server', 'server.js')], { env: { ...process.env, PORT: String(port), HOME: home, USERPROFILE: home, PHOLAMA_HOME: path.join(home, '.pholama'), PHOLAMA_MODELS: models, LLAMA_SERVER_DIR: bin, PHOLAMA_CLOUD_URL: 'http://127.0.0.1:' + cport + '/f' }, stdio: 'ignore' });
+  const B = 'http://127.0.0.1:' + port; for (let i = 0; i < 60; i++) { try { if ((await fetch(B + '/api/version')).ok) break; } catch {} await wait(250); }
+  const J = (p, b) => fetch(B + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) }).then(r => r.json());
+  const chat = (body, hdr = { 'x-pholama-token': 'tok_ABC123' }) => fetch(B + '/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', ...hdr }, body: JSON.stringify(body) }).then(r => r.text());
+  const credits = async () => (await (await fetch(B + '/api/credits')).json().catch(() => ({}))).left;
+  const studio = { project: 'mx' };
+  try {
+    await J('/api/studio/projects', { name: 'mx' });
+    const before = await credits();
+    let t = await chat({ model: 'cloud:pholama', agent: true, studio, messages: [{ role: 'user', content: 'make a hello page' }] });
+    const file = path.join(home, '.pholama', 'studio', 'mx', 'hello.html');
+    ok('Max built a real file through the Studio tools', fs.existsSync(file) && /From Max/.test(fs.readFileSync(file, 'utf8')), t.slice(0, 500));
+    ok('the final answer came from Max', /Max built it/.test(t), t.slice(0, 400));
+    ok('the sign-in token was sent to the cloud', calls.length > 0 && calls.every(c => c.auth === 'Bearer tok_ABC123'), JSON.stringify(calls.map(c => c.auth)));
+    ok('the token never comes back to the page', !t.includes('tok_ABC123'), t.slice(0, 200));
+    ok('Max costs the same as any Studio task (3 for a medium task, no extra)', /Studio task 3/.test(t) && !/Agent Max in Studio 20/.test(t) && !/Spent 23/.test(t), (t.match(/Spent[^"]*/g) || []).join(' | '));
+    const uevs = t.split('\n').map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(e => e && e.maxUsage && e.maxUsage.day_used != null).map(e => e.maxUsage);
+    ok('Studio tells the page the day and month numbers after each Max call', uevs.length >= 2 && uevs.every(u => u.day_cap === 10 && u.month_cap === 30), JSON.stringify(uevs));
+    ok('and the numbers go UP from one Max call to the next (the counter moves)', uevs.length >= 2 && uevs[uevs.length - 1].day_used > uevs[0].day_used && uevs[uevs.length - 1].month_used > uevs[0].month_used, JSON.stringify(uevs));
+    const after = await credits(); if (before != null && after != null) ok('Max added no extra charge: only Thinking (25) + a medium Studio task (3) were taken, not the old 20 more', before - after === 28, before + ' -> ' + after);
+    // Max is for Studio only
+    t = await chat({ model: 'cloud:pholama', agent: true, messages: [{ role: 'user', content: 'hi' }] }); ok('outside Studio it explains, and does not call the cloud', /only works inside Studio/.test(t), t.slice(0, 300));
+    // the step cap: a model that loops forever is stopped after 8 cloud calls
+    mode = 'loop'; calls.length = 0;
+    t = await chat({ model: 'cloud:pholama', agent: true, studio, messages: [{ role: 'user', content: 'keep going forever' }] });
+    ok('one message makes at most 8 Max calls', calls.length <= 8 && calls.length > 0, 'calls=' + calls.length);
+    ok('and says why it stopped (the person sees the reason)', /used its 8 steps|Ask again/i.test(t), t.replace(/\{"credits"[\s\S]*/, '').slice(-500));
+    // not signed in
+    mode = 'login'; t = await chat({ model: 'cloud:pholama', agent: true, studio, messages: [{ role: 'user', content: 'x' }] }, {});
+    ok('no sign-in gives a clear message', /Sign in to use Agent Max/.test(t), t.slice(0, 300));
+    // Studio tells the cloud the truth about local tools (always sending true made it see a cap of 1 while the page showed 2 of 10)
+    mode = 'cap'; seen.length = 0; daily = 1;   // one message already used today
+    t = await chat({ model: 'cloud:pholama', agent: true, studio, thinking: true, effort: 'max', messages: [{ role: 'user', content: 'cap test' }] });
+    ok('a PC WITH a tool AI tells the cloud localTools=true', seen.length > 0 && seen.every(x => x === true), JSON.stringify(seen));
+    ok('…and with one message used, that honest cap of 1 is reached (the page shows x/1 then)', /daily limit/i.test(t), t.slice(0, 300));
+    try { fs.unlinkSync(path.join(models, lm.file)); } catch {}
+    seen.length = 0; daily = 2; calls.length = 0;   // the page showed 2 of 10 used
+    t = await chat({ model: 'cloud:pholama', agent: true, studio, thinking: true, effort: 'max', messages: [{ role: 'user', content: 'cap test again' }] });
+    ok('a PC WITHOUT a tool AI tells the cloud localTools=false', seen.length > 0 && seen.every(x => x === false), JSON.stringify(seen));
+    ok('…so 2 of 10 used is NOT a limit, and Max answers', /Cap test answer/.test(t) && !/daily limit/i.test(t), t.slice(0, 400));
+    ok('thinking on Max spends ONE cloud message, not two (no hidden thinking pass)', seen.length === 1, 'cloud calls=' + seen.length);
+    ok('no "Thinking pass failed" or "Improve request failed" noise', !/Thinking pass failed|Improve request failed/.test(t), t.slice(0, 300));
+    fs.writeFileSync(path.join(models, lm.file), 'x');   // put the local model back for the fallback checks below
+    // a limit falls back to the local model, free
+    mode = 'limit'; t = await chat({ model: 'cloud:pholama', agent: true, studio, messages: [{ role: 'user', content: 'hello again' }] });
+    { const hit = t.split('\n').map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(e => e && e.maxUsage && e.maxUsage.hit).map(e => e.maxUsage.hit);
+      ok('at the daily limit the page is told the day counter is full', hit.includes('day'), JSON.stringify(hit)); }
+    ok('at the limit it says it is switching to the local model', /daily limit/i.test(t) && /Switching to/.test(t) && /free/i.test(t), t.slice(0, 500));
+    ok('and the local model really answered', /Local model answering for free/.test(t), t.slice(0, 500));
+    const evs = t.split('\n').map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+    ok('no error is shown to the person', !evs.some(e => e.error), JSON.stringify(evs.filter(e => e.error)));
+  } finally { srv.kill('SIGKILL'); cloud.close(); await wait(400); try { process.kill(+fs.readFileSync(path.join(home, '.pholama', 'llama.pid'), 'utf8'), 'SIGKILL'); } catch {} }
+  console.log(bad ? bad + ' FAILED' : 'ALL PASSED'); process.exit(bad ? 1 : 0);
+}
+main().catch(e => { console.error(e); process.exit(1); });

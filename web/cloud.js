@@ -1,0 +1,47 @@
+// Pholama cloud model + think effort + who may use what. Pure logic, no page code, so it can be tested on its own.
+const FN = 'https://lyra-09dfabbf.base44.app/functions/pholamaCloud';
+
+// Think effort: how long and careful the answer is. On Agent Max every message counts as 1 whatever the effort.
+// On your own models it uses integration credits: Long +10, Max +25 (plus +25 when Thinking is on too). Agent Max stays 1 message.
+export const EFFORT = {
+  normal: { label: 'Normal', hint: 'Quick, short answers. Free.' },
+  long:   { label: 'Long',   hint: 'Fuller, more careful answers. +10 credits on your own models.' },
+  max:    { label: 'Max',    hint: 'Deepest reasoning. +25 credits, and +25 more if Thinking is on too.' },
+};
+import { agentName } from './agentname.js';
+export const MAX_NAME = agentName(), MAX_DAY = 10, MAX_MONTH = 30;   // no fixed product name: the member's chosen name, or a random one
+export const effortKeys = () => Object.keys(EFFORT);
+export const cleanEffort = e => (EFFORT[e] ? e : 'normal');
+
+// What to add to a LOCAL model's instructions for a given effort. Normal adds nothing (so normal is exactly as before).
+export function effortPrompt(e) {
+  if (e === 'long') return 'Take a little more care: give a fuller, well organised answer.';
+  if (e === 'max') return 'Reason carefully step by step, double check your work, then give a thorough answer.';
+  return '';
+}
+// Local models also get more room to answer at higher effort.
+export const effortTokens = (base, e) => (e === 'max' ? Math.round(base * 2) : e === 'long' ? Math.round(base * 1.5) : base);
+
+// ---- the sign-in rule: you must have an account to use ANY model, or to download one ----
+export const CLOUD_ID = 'cloud:pholama';
+export function mayUse(user) { return !!user; }
+export function mayDownload(user) { return !!user; }
+export const GATE_MESSAGE = 'Sign in with Discord to chat and download models. It is free and takes one tap.';
+
+// ---- cloud chat ----
+// Returns { reply, tools:[{name,input,output}], day_used, day_cap, month_used, month_cap }.
+// Throws Error with .code = login | limit-day | limit-month | server | setup | network (and .info with the counts).
+export let localToolAI = false;                       // set by the page: does this PC have a local AI that can run tools?
+export function setLocalToolAI(v) { localToolAI = !!v; }
+export async function cloudChat(messages, effort, token, signal) {
+  let r;
+  try {
+    r = await fetch(FN, { method: 'POST', signal, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ messages: messages.slice(-12), effort: cleanEffort(effort), localTools: localToolAI }) });
+  } catch (e) {
+    if (e && e.name === 'AbortError') throw e;
+    const err = new Error('Could not reach the cloud model. Check your connection.'); err.code = 'network'; throw err;
+  }
+  let j = {}; try { j = await r.json(); } catch {}
+  if (!r.ok) { const err = new Error(j.error || 'The cloud model had a problem.'); err.code = j.code || 'server'; err.info = j; throw err; }
+  return j;
+}
