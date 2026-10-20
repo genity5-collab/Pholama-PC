@@ -479,8 +479,7 @@ function runUiActions(list) {
 }
 function paintCloudLeft(r) {
   const el = $('#cloudLeft'); if (!r || r.day_used == null) { el.style.display = 'none'; return; }
-  const dl = Math.max(0, r.day_cap - r.day_used), ml = Math.max(0, r.month_cap - r.month_used), n = Math.min(dl, ml);
-  el.textContent = `${MAX_NAME}: ${n} left today \u00b7 ${ml} left this month`; el.style.display = '';
+  el.textContent = `${MAX_NAME}: ${r.credits_left ?? Math.max(0, (r.week_cap || 1000) - r.day_used)} of ${r.week_cap || 1000} credits left this week`; el.style.display = '';
 }
 
 const SEND_ICON = '\u2191', STOP_ICON = '\u25A0';
@@ -563,7 +562,7 @@ async function send() {
       paintCloudLeft(r);
       if (r && r.day_used != null) {
         try {
-          localStorage.setItem('pholama.maxUsage', JSON.stringify({ day_used: r.day_used, day_cap: r.day_cap, month_used: r.month_used, month_cap: r.month_cap }));
+          localStorage.setItem('pholama.maxUsage', JSON.stringify({ day_used: r.day_used, day_cap: r.day_cap, month_used: r.month_used, month_cap: r.month_cap, week_cap: r.week_cap, credits_left: r.credits_left }));
         } catch {}
         paintUsage();
         paintComposerPill();
@@ -1241,17 +1240,16 @@ function paintUsage() {
     if (textEl) textEl.textContent = 'Send a message to Agent Max to see your usage';
     if (barsEl) barsEl.style.display = 'none';
   } else {
-    const dUsed = uData.day_used ?? 0, dCap = uData.day_cap ?? 10;
-    const mUsed = uData.month_used ?? 0, mCap = uData.month_cap ?? 30;
-    if (textEl) textEl.textContent = `Today ${dUsed} of ${dCap}, this month ${mUsed} of ${mCap}`;
+    const dUsed = uData.day_used ?? 0, dCap = uData.week_cap ?? 1000;
+    if (textEl) textEl.textContent = `This week ${dUsed} of ${dCap} credits`;
     if (barsEl) {
       barsEl.style.display = '';
       const dayPct = Math.min(100, Math.round((dUsed / Math.max(1, dCap)) * 100));
-      const monthPct = Math.min(100, Math.round((mUsed / Math.max(1, mCap)) * 100));
       $('#u_day_num').textContent = `${dUsed} / ${dCap}`;
       $('#u_day_fill').style.width = dayPct + '%';
-      $('#u_month_num').textContent = `${mUsed} / ${mCap}`;
-      $('#u_month_fill').style.width = monthPct + '%';
+      const meta = CLOUD_MODELS.find(m => m.id === cloudModelId()) || CLOUD_MODELS[0];
+      $('#u_month_num').textContent = `${meta.cost} credits/word`;
+      const mc = $('#u_model_cost'); if (mc) mc.textContent = `${meta.label}: ${meta.hint}. Work time is billed at 5 credits per started minute.`;
     }
   }
 
@@ -1279,10 +1277,10 @@ function paintComposerPill() {
     let uData = null;
     try { uData = JSON.parse(localStorage.getItem('pholama.maxUsage') || 'null'); } catch {}
     const dUsed = uData ? (uData.day_used ?? 0) : 0;
-    const dCap = uData ? (uData.day_cap ?? 10) : 10;
-    cb.textContent = `Max ${dUsed}/${dCap} today`;
+    const dCap = uData ? (uData.week_cap ?? 1000) : 1000;
+    cb.textContent = `Max ${dUsed}/${dCap} this week`;
     cb.className = 'pill' + (dUsed >= dCap ? ' zero' : dUsed >= dCap * 0.8 ? ' low' : '');
-    cb.title = `Agent Max usage: ${dUsed} of ${dCap} used today. Tap to see usage in Settings.`;
+    cb.title = `Agent Max usage: ${dUsed} of ${dCap} credits used this week. Tap to see usage in Settings.`;
     cb.style.display = '';
   } else if (server && cred) {
     cb.textContent = cred.left;
