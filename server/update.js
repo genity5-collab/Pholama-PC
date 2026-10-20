@@ -13,6 +13,7 @@ const ARCHIVE = process.env.PHOLAMA_UPDATE_ARCHIVE || `https://github.com/${REPO
 // Program files that an update may replace. Anything else in the folder is left alone.
 const KEEP = new Set(['.git', 'node_modules', 'bin']);
 const localVersion = () => { try { return JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version || '0'; } catch { return '0'; } };
+const installedSha = () => { try { const j = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.pholama', 'update.json'), 'utf8')); return /^[0-9a-f]{40}$/.test(String(j.sha || '')) ? String(j.sha) : ''; } catch { return ''; } };
 
 // ---- downloading: built to survive slow or blocked routes (IPv6 trouble, VPNs, some ISPs) ----
 // Each attempt forces IPv4 (family: 4) because a dead IPv6 route is the usual cause of "timed out".
@@ -74,7 +75,7 @@ async function check() {
   const current = localVersion();
   // Fresh answer first: the commits API is cached for 1 minute, the raw file for 5. Skipped when a test or mirror supplies its own address.
   if (!process.env.PHOLAMA_UPDATE_BASE && !process.env.PHOLAMA_NO_FRESH) {
-    try { const f = await require('./freshcheck').latest({ repo: REPO, branch: BRANCH }); if (f.ok) return { current, latest: f.version || '0', newer: cmp(f.version || '0', current) > 0, sha: f.sha }; } catch {}
+    try { const f = await require('./freshcheck').latest({ repo: REPO, branch: BRANCH }); if (f.ok) return { current, latest: f.version || '0', newer: cmp(f.version || '0', current) > 0 || (!!f.sha && f.sha !== installedSha()), sha: f.sha }; } catch {}
   }
   const pkg = JSON.parse(await fetchAny(process.env.PHOLAMA_UPDATE_BASE ? [RAW + '/package.json'] : textUrls()));
   return { current, latest: pkg.version || '0', newer: cmp(pkg.version || '0', current) > 0 };
@@ -110,6 +111,7 @@ async function update({ log = console.log, color = {}, force = false, progress =
     const backup = path.join(os.homedir(), '.pholama', 'previous-version');
     try { fs.rmSync(backup, { recursive: true, force: true }); copyTree(ROOT, backup); } catch {}
     copyTree(dir, ROOT);
+    try { const old = readSet(); writeSet({ ...old, sha: info.sha || old.sha || '' }); } catch {}
     if (process.platform !== 'win32') { for (const f of ['start.sh', 'server/server.js', 'server/cli.js']) try { fs.chmodSync(path.join(ROOT, f), 0o755); } catch {} }
     if (progress) { try { status.whatsNew = notesFor(dir, info.latest); } catch {} setProgress('done', 'Installed version ' + info.latest, 1, 1); }
     log(g(`Updated to ${info.latest}. `) + 'Restart Pholama to use it:  pholama stop   then   pholama start');
@@ -133,7 +135,7 @@ const readSet = () => { try { return JSON.parse(fs.readFileSync(SET, 'utf8')); }
 const writeSet = o => { try { fs.mkdirSync(HOME, { recursive: true }); fs.writeFileSync(SET, JSON.stringify(o)); } catch {} };
 // Updates are the user's choice: a new install starts with automatic updates OFF. Someone who already chose (on or off) keeps their choice.
 // Not updating is always fine: an older version keeps working, it just does not get the newer features.
-const status = { current: localVersion(), latest: null, ready: false, checking: false, restarting: false, lastCheck: null, error: null, auto: readSet().auto === true, whatsNew: null,
+const status = { current: localVersion(), latest: null, ready: false, checking: false, restarting: false, lastCheck: null, error: null, auto: readSet().auto !== false, whatsNew: null,
   progress: { phase: 'idle', done: 0, total: 0, percent: 0, speed: 0, step: '' } };
 const setProgress = (phase, step, done = 0, total = 0, speed = 0) => { status.progress = { phase, step, done, total, percent: total > 0 ? Math.min(100, Math.round(done / total * 100)) : 0, speed: Math.round(speed) }; };
 let timer = null, restartHandler = null, checkTask = null;

@@ -4,7 +4,7 @@
 import { Account, cleanName } from './account.js';
 import { sourcesCard } from './sources.js';
 import { llamaLoader, LLAMA_CSS } from './loader.js';
-import { EFFORT, effortKeys, cleanEffort, effortTokens, mayUse, mayDownload, GATE_MESSAGE, CLOUD_ID, cloudChat, MAX_NAME, setLocalToolAI } from './cloud.js';
+import { EFFORT, effortKeys, cleanEffort, effortTokens, mayUse, mayDownload, GATE_MESSAGE, CLOUD_ID, CLOUD_MODELS, cloudModelId, cloudChat, MAX_NAME, setLocalToolAI } from './cloud.js';
 import { planFallback } from './fallback.js';
 import { BRAIN_KEY, readBrain, saveBrain, resolveBrain, brainChoices, brainWarning } from './maxbrain.js';
 import { splitThinking, thinkLabel, countWords } from './thinking.js';
@@ -25,7 +25,7 @@ import { findMentionQuery, pluginOptions, filterPluginOptions } from './mention-
 
 const $ = s => document.querySelector(s);
 { const st = document.createElement('style'); st.textContent = LLAMA_CSS; document.head.appendChild(st); }
-const chatEl = $('#chat'), inEl = $('#in'), mentionMenu = $('#mentionMenu'), sel = $('#model'), dlg = $('#dlg'), listEl = $('#list');
+const chatEl = $('#chat'), inEl = $('#in'), mentionMenu = $('#mentionMenu'), sel = $('#model'), cloudSel = $('#cloudModel'), dlg = $('#dlg'), listEl = $('#list');
 const heroEl = $('#hero');   // kept so New session can bring the welcome screen back
 let hasGPU = false;
 let hasF16 = false;
@@ -230,6 +230,12 @@ async function refreshSelect() {
   } catch {}
   sel.add(new Option('☁ ' + MAX_NAME + ' (cloud, no download)', CLOUD_ID));
   const first = [...sel.options].findIndex(o => !o.disabled); if (first >= 0) sel.selectedIndex = first;
+  if (cloudSel) {
+    cloudSel.innerHTML = '';
+    for (const m of CLOUD_MODELS) cloudSel.add(new Option(`${m.label} · ${m.cost}/word`, m.id));
+    cloudSel.value = cloudModelId(); cloudSel.style.display = '';
+    cloudSel.onchange = () => { localStorage.setItem('pholama.cloudModel', cloudSel.value); paintUsage(); };
+  }
   paintSwitches(); paintEffort(); paintComposerPill();
 }
 
@@ -545,13 +551,14 @@ async function send() {
     const base = attach && attach.hasImages ? attach.build(history.slice(0, -1)) : history;
     const mem = local ? memorySystem() : null, send_ = mem ? [mem, ...base] : base;
     if (isCloud) {
-      msg.log('step', `Asking ${MAX_NAME}` + (effort !== 'normal' ? ` (effort: ${EFFORT[effort].label})` : '') + '...', 0);
+      const selectedCloud = cloudModelId(), cloudMeta = CLOUD_MODELS.find(m => m.id === selectedCloud) || CLOUD_MODELS[0];
+      msg.log('step', `Asking ${MAX_NAME} · ${cloudMeta.label}` + (effort !== 'normal' ? ` (effort: ${EFFORT[effort].label})` : '') + '...', 0);
       const ac = new AbortController(); stopper = () => ac.abort();
       const t0 = performance.now();
-      const r = await cloudChat(history, effort, token, ac.signal);
+      const r = await cloudChat(history, effort, token, ac.signal, selectedCloud);
       acc = r.reply; pendingUi = r.actions; msg.text(acc); if (r.thinking) msg.thought(r.thinking, +((performance.now() - t0) / 1000));
       for (const t of (r.tools || [])) msg.log('action', `${t.name}${t.input && (t.input.expression || t.input.question) ? ' ' + (t.input.expression || t.input.question) : ''}`, +((performance.now() - t0) / 1000));
-      msg.log('result', `${MAX_NAME} used ${(r.tools || []).length} tool(s). Today: ${r.day_used}/${r.day_cap}. Month: ${r.month_used}/${r.month_cap}.`, +((performance.now() - t0) / 1000));
+      msg.log('result', `${MAX_NAME} used ${(r.tools || []).length} tool(s). Week: ${r.day_used}/${r.week_cap || 1000}. Cost: ${r.cost || cloudMeta.cost} credits/word.`, +((performance.now() - t0) / 1000));
       msg.usage({ in: history.reduce((n, m) => n + Math.ceil(m.content.length / 4), 0), out: Math.ceil(acc.length / 4), estimated: true, seconds: +((performance.now() - t0) / 1000).toFixed(1) });
       paintCloudLeft(r);
       if (r && r.day_used != null) {

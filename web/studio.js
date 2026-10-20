@@ -351,7 +351,7 @@ export function createStudio(env) {
     const ac = new AbortController(); S.stopper = () => ac.abort(); let reply = '', node = null, srcCard = null, thinkNode = null;
     live.begin(); const openTools = [];
     try {
-      const r = await api('api/chat', { method: 'POST', signal: ac.signal, headers: ghHeaders(), body: JSON.stringify({ model, messages: hist, agent: true, stream: true, studio: { project: S.project }, switches: { search: true, tools: true } }) });
+      const r = await api('api/chat', { method: 'POST', signal: ac.signal, headers: ghHeaders(), body: JSON.stringify({ model, cloudModel: model === 'cloud:pholama' ? (localStorage.getItem('pholama.cloudModel') || 'qwen7b') : undefined, messages: hist, agent: true, stream: true, studio: { project: S.project }, switches: { search: true, tools: true } }) });
       const rd = r.body.getReader(), dec = new TextDecoder(); let buf = '';
       for (;;) {
         const { done, value } = await rd.read(); if (done) break; buf += dec.decode(value, { stream: true }); let i;

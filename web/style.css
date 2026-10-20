@@ -97,7 +97,7 @@ header{border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent);ba
 @media (max-width:430px){.brand span{display:none}.brand::before{display:none!important}
   header button{padding:6px 11px;font-size:14px;min-height:36px}
   #cr{order:1;min-width:0}#cr::before{content:'\26A1\FE0E ';opacity:.7}#mgr,#settingsBtn{order:1}
-  #model{order:2;flex:1 1 100%;max-width:100%;min-height:36px}
+  #model,#cloudModel{order:2;flex:1 1 100%;max-width:100%;min-height:36px}
   .pill{font-size:12px;padding:3px 8px;min-height:36px}
 }
 
