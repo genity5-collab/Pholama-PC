@@ -1201,7 +1201,17 @@ async function openWorkspace() {
   workspaceLoading = true;
   try {
     let mod; try { mod = await import('./studioworkspace.js'); } catch (e1) { mod = await import('./studioworkspace.js?fresh=' + Date.now()); }
-    workspace = mod.createWorkspace($('#workspace'), { api, getModels: () => pcModelNames().filter(v => !/^(web|cpu|cloud):/.test(v)).map(v => ({ id: v, name: v.replace(/^(gguf|ollama):/, '') })) });
+    // Studio requests carry the signed-in Platform token and GitHub token so
+    // cloud planning and connector tools work from the same PC workspace.
+    const workspaceApi = (path, opts = {}) => api(path, { ...opts, headers: { ...ghHeaders(), ...(opts.headers || {}) } });
+    workspace = mod.createWorkspace($('#workspace'), {
+      api: workspaceApi,
+      getModels: () => [
+        { id: CLOUD_ID, name: 'Pholama Cloud · Qwen 7B', tools: true },
+        { id: 'cloud:pholama:mistral', name: 'Pholama Cloud · Mistral', tools: true },
+        ...pcModelNames().filter(v => !/^(web|cpu|cloud):/.test(v)).map(v => ({ id: v, name: v.replace(/^(gguf|ollama):/, '') }))
+      ]
+    });
     await workspace.open();
   } catch (e) { $('#workspace').textContent = 'The workspace could not load: ' + (e && e.message || e); console.warn(e); }
   finally { workspaceLoading = false; }

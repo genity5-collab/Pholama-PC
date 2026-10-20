@@ -895,8 +895,30 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/caps') { const m = u.searchParams.get('model') || ''; const c = await modelCaps(m); return json(res, 200, { ...c, nativeThinking: !!c.thinking, thinking: true, search: c.tools, mcp: c.tier === 'good', github: c.tools }); }   // thinking works on every model now: models without a native mode get the host reasoning pass
     if (p.startsWith('/api/studio/ws')) {   // Studio workspace: runs, activity, diffs, problems, tests (studioroutes.js)
       const sr = require('./studioroutes');
-      const models = (await listModels().catch(() => [])).map(m => ({ id: m.name, name: m.name, tools: m.tools !== false }));
-      const callModel = model => async (messages, o = {}) => { let text = ''; await streamTurnBase(model, messages, { temperature: 0.2, num_predict: 2500 }, t => { text += t; }, (o && o.signal) || AbortSignal.timeout(180000)); return text; };
+      const models = [
+        { id: 'cloud:pholama', name: 'Pholama Cloud · Qwen 7B', tools: true },
+        { id: 'cloud:pholama:mistral', name: 'Pholama Cloud · Mistral', tools: true },
+        ...(await listModels().catch(() => [])).map(m => ({ id: m.name, name: m.name, tools: m.tools !== false }))
+      ];
+      // Studio must use the full cloud streamer. It delegates cloud planning
+      // to Free.ai (with the PC-side usage guard) while local GGUF/Ollama
+      // models stay on their existing path. Calling streamTurnBase directly
+      // made cloud Studio runs fail as "Unknown model cloud:pholama".
+      const studioMaxBudget = maxcloud.newBudget(), studioMaxToken = String(req.headers['x-pholama-token'] || '').slice(0, 4000);
+      let studioMaxLocalTools = null;
+      const callModel = model => async (messages, o = {}) => {
+        let text = '';
+        const cloud = model === 'cloud:pholama' || model === 'cloud:pholama:mistral';
+        const signal = (o && o.signal) || AbortSignal.timeout(180000);
+        if (cloud) {
+          if (studioMaxLocalTools === null) studioMaxLocalTools = await hasToolAI().catch(() => false);
+          const usage = {};
+          await maxcloud.streamMax(studioMaxToken, messages, { temperature: 0.2, num_predict: 2500 }, t => { text += t; }, signal, usage, studioMaxBudget, studioMaxLocalTools, model.endsWith(':mistral') ? 'mistral' : 'qwen7b');
+        } else {
+          await streamTurnBase(model, messages, { temperature: 0.2, num_predict: 2500 }, t => { text += t; }, signal);
+        }
+        return text;
+      };
       let toolDefs = []; try { toolDefs = (await agent.buildTools({ ...agent.allowed(), inStudio: true })).tools; } catch {}
       const tctx = { toolCalls: 0, maxToolCalls: 60, userId: 'local' };
       return sr.handle(req, res, u, { json, body, models, terminal: !!(agent.allowed().terminal), callModel, parseTool: agent.parseTool, toolNames: toolDefs.map(t => t.name), runTool: (name, args) => agent.runTool(toolDefs, name, args, tctx) });
