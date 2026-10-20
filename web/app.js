@@ -233,7 +233,7 @@ async function refreshSelect() {
   if (cloudSel) {
     cloudSel.innerHTML = '';
     for (const m of CLOUD_MODELS) cloudSel.add(new Option(`${m.label} · ${m.cost}/word`, m.id));
-    cloudSel.value = cloudModelId(); cloudSel.style.display = '';
+    cloudSel.value = cloudModelId(); cloudSel.style.display = sel.value === CLOUD_ID ? '' : 'none';
     cloudSel.onchange = () => { localStorage.setItem('pholama.cloudModel', cloudSel.value); paintUsage(); };
   }
   paintSwitches(); paintEffort(); paintComposerPill();
@@ -445,7 +445,7 @@ async function paintSwitches() {
   if (shown.length && swCaps._tier === 'basic') { const n = document.createElement('span'); n.className = 'swnote'; n.textContent = 'Small model: Pholama guides it. Studio builds and edits work, but it is not a full agent. A bigger model runs tools better.'; row.appendChild(n); }
   row.style.display = row.children.length ? '' : 'none';
 }
-sel.addEventListener('change', () => { paintSwitches(); paintEffort(); paintComposerPill(); });
+sel.addEventListener('change', () => { if (cloudSel) cloudSel.style.display = sel.value === CLOUD_ID ? '' : 'none'; paintSwitches(); paintEffort(); paintComposerPill(); });
 
 // ----- think effort: Normal / Long / Max -----
 function paintEffort() {
