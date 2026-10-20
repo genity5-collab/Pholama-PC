@@ -1,3 +1,5 @@
+import { CONNECTOR_PRESETS } from './connectors.js';
+
 // Browser side of: (1) videos and pictures the AI shows, (2) the Allow card for your own tools, (3) the "My tools" maker.
 // Everything is built with textContent and setAttribute on fixed element types. AI text can never become markup.
 const YT = /^[A-Za-z0-9_-]{11}$/;
@@ -71,6 +73,16 @@ export async function paintMyTools(root, api, opts = {}) {
   root.textContent = '';
   const again = () => paintMyTools(root, api, opts);
   const intro = mk('div', 'sys', 'Tools let the AI use any web service, like Notion, Supabase or Discord. Keys stay on this PC and the AI never sees them. Anything that changes data asks you first.'); intro.style.textAlign = 'left'; root.append(intro);
+
+  const library = mk('details', 'tl-box'); library.open = true; library.append(mk('summary', null, 'Connector library'), mk('small', null, 'Ten reviewed API recipes. Add one, then save its secret below. Read-only connectors run automatically; write methods always ask for Allow.'));
+  const grid = mk('div'); grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-top:8px';
+  for (const p of CONNECTOR_PRESETS) {
+    const card = mk('div', 'tl-card'), info = mk('div', 'tl-info'), title = mk('b', null, p.title), desc = mk('small', null, p.what), meta = mk('small', 'tl-id', p.method + ' · ' + (p.secret ? 'local secret ' + p.secret : 'no key'));
+    info.append(title, desc, meta); const add = mk('button', 'p', 'Add connector'); add.type = 'button';
+    add.onclick = async () => { add.disabled = true; try { await post(api, 'api/mytools/save', { ...p, by: 'user' }); add.textContent = 'Added'; again(); } catch (e) { add.disabled = false; add.textContent = e.message || 'Could not add'; } };
+    card.append(info, add); grid.append(card);
+  }
+  library.append(grid); root.append(library);
 
   // ----- the list of tool cards -----
   const list = mk('div', 'tl-list'); root.append(list);
