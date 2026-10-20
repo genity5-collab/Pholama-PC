@@ -1154,9 +1154,13 @@ function paintFallback() {
 // ---------- Studio (only on the PC itself: it edits files on this computer) ----------
 let studio = null, studioLoading = false;
 function showView(name) {
-  const st = name === 'studio', dh = name === 'dash';
+  // The shared workspace is the PC Code view. Keep the old Studio module
+  // available for backwards compatibility, but make the visible tab use the
+  // same VS Code-style workspace as the site.
+  const studioView = name === 'studio';
+  const st = studioView || name === 'workspace', dh = name === 'dash';
   const ws = name === 'workspace';
-  document.body.classList.toggle('studio-on', st || ws); document.body.classList.toggle('dash-on', dh); $('#studio').hidden = !st; const wz = $('#workspace'); if (wz) wz.hidden = !ws; const dz = $('#dash'); if (dz) dz.hidden = !dh;
+  document.body.classList.toggle('studio-on', st || ws); document.body.classList.toggle('dash-on', dh); $('#studio').hidden = !studioView; const wz = $('#workspace'); if (wz) wz.hidden = !ws; const dz = $('#dash'); if (dz) dz.hidden = !dh;
   for (const [id, on] of [['#vDash', dh], ['#vChat', name === 'chat'], ['#vStudio', st], ['#vWorkspace', ws]]) { const b = $(id); if (!b) continue; b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on)); }
   if (dh) paintDashboard();
   try { localStorage.setItem('pholama_view', name); } catch {}
@@ -1166,7 +1170,7 @@ async function paintDashboard() {
   const el = $('#dash'); if (!el) return;
   try {
     dashMod = dashMod || await import('./dashboard.js');
-    await dashMod.mountDashboard(el, { server, openChat: p => { showView('chat'); if (p) { inEl.value = p; inEl.focus(); } else inEl.focus(); }, openModels: () => $('#mgr').click(), openStudio: () => openStudio() });
+    await dashMod.mountDashboard(el, { server, openChat: p => { showView('chat'); if (p) { inEl.value = p; inEl.focus(); } else inEl.focus(); }, openModels: () => $('#mgr').click(), openStudio: () => openWorkspace() });
   } catch (e) { el.textContent = 'The dashboard could not load: ' + (e && e.message || e); }
 }
 async function openStudio() {
@@ -1205,12 +1209,15 @@ async function openWorkspace() {
 function studioTab(onPc) {
   const b = $('#vStudio'); if (!b) return;
   b.style.display = onPc ? '' : 'none';
-  const w = $('#vWorkspace'); if (w) w.style.display = onPc ? '' : 'none';
+  // One Code entry point keeps PC and site Studio visually and behaviorally
+  // identical. The legacy workspace tab remains in the DOM for old links,
+  // but is not exposed as a second competing Studio view.
+  const w = $('#vWorkspace'); if (w) w.style.display = 'none';
   if (!onPc && (document.body.classList.contains('studio-on'))) showView('chat');
 }
 $('#vDash').onclick = () => showView('dash');
 $('#vChat').onclick = () => showView('chat');
-$('#vStudio').onclick = () => openStudio();
+$('#vStudio').onclick = () => openWorkspace();
 const vw = $('#vWorkspace'); if (vw) vw.onclick = () => openWorkspace();
 
 // The welcome screen on the user's own PC: real facts about this machine, nothing invented.
