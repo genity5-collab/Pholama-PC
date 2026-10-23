@@ -1207,8 +1207,8 @@ async function openWorkspace() {
     workspace = mod.createWorkspace($('#workspace'), {
       api: workspaceApi,
       getModels: () => [
-        { id: CLOUD_ID, name: 'Pholama Cloud · Qwen 7B', tools: true },
-        { id: 'cloud:pholama:mistral', name: 'Pholama Cloud · Mistral', tools: true },
+        { id: 'cloud:pholama:coder', name: 'Pholama Cloud · Qwen Coder (best for code)', tools: true },
+        { id: CLOUD_ID, name: 'Pholama Cloud · Qwen Chat', tools: true },
         ...pcModelNames().filter(v => !/^(web|cpu|cloud):/.test(v)).map(v => ({ id: v, name: v.replace(/^(gguf|ollama):/, '') }))
       ]
     });

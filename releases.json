@@ -1,6 +1,16 @@
 {
- "latest": "0.9.43",
+ "latest": "0.9.44",
  "releases": [
+  {
+   "version": "0.9.44",
+   "date": "2026-10-23",
+   "title": "Cheaper, code-first cloud models",
+   "notes": [
+    "Cloud Studio now offers Qwen Coder (best for code) and Qwen Chat, both at the cheap rate. Mistral is retired; old saved choices still work and use the coder.",
+    "The AI builds with round shapes (balls and cylinders): cars get four cylinder wheels, plus lights and windows.",
+    "Code replies are steadier and have more room for whole scripts."
+   ]
+  },
   {
    "version": "0.9.43",
    "date": "2026-10-23",

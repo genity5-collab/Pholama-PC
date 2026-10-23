@@ -896,8 +896,8 @@ const server = http.createServer(async (req, res) => {
     if (p.startsWith('/api/studio/ws')) {   // Studio workspace: runs, activity, diffs, problems, tests (studioroutes.js)
       const sr = require('./studioroutes');
       const models = [
-        { id: 'cloud:pholama', name: 'Pholama Cloud · Qwen 7B', tools: true },
-        { id: 'cloud:pholama:mistral', name: 'Pholama Cloud · Mistral', tools: true },
+        { id: 'cloud:pholama:coder', name: 'Pholama Cloud · Qwen Coder (best for code)', tools: true },
+        { id: 'cloud:pholama', name: 'Pholama Cloud · Qwen Chat', tools: true },
         ...(await listModels().catch(() => [])).map(m => ({ id: m.name, name: m.name, tools: m.tools !== false }))
       ];
       // Studio must use the full cloud streamer. It delegates cloud planning
@@ -908,12 +908,12 @@ const server = http.createServer(async (req, res) => {
       let studioMaxLocalTools = null;
       const callModel = model => async (messages, o = {}) => {
         let text = '';
-        const cloud = model === 'cloud:pholama' || model === 'cloud:pholama:mistral';
+        const cloud = model === 'cloud:pholama' || model === 'cloud:pholama:coder' || model === 'cloud:pholama:mistral';   // mistral was retired; an old saved choice still works and uses the coder
         const signal = (o && o.signal) || AbortSignal.timeout(180000);
         if (cloud) {
           if (studioMaxLocalTools === null) studioMaxLocalTools = await hasToolAI().catch(() => false);
           const usage = {};
-          await maxcloud.streamMax(studioMaxToken, messages, { temperature: 0.2, num_predict: 2500 }, t => { text += t; }, signal, usage, studioMaxBudget, studioMaxLocalTools, model.endsWith(':mistral') ? 'mistral' : 'qwen7b');
+          await maxcloud.streamMax(studioMaxToken, messages, { temperature: 0.2, num_predict: 2500 }, t => { text += t; }, signal, usage, studioMaxBudget, studioMaxLocalTools, model === 'cloud:pholama' ? 'qwen7b' : 'qwen-coder');   // Studio writes code: everything except plain chat uses the coder model
         } else {
           await streamTurnBase(model, messages, { temperature: 0.2, num_predict: 2500 }, t => { text += t; }, signal);
         }

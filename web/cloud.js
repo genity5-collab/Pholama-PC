@@ -11,8 +11,8 @@ export const EFFORT = {
 import { agentName } from './agentname.js';
 export const MAX_NAME = agentName(), MAX_DAY = 10, MAX_MONTH = 30;   // no fixed product name: the member's chosen name, or a random one
 export const CLOUD_MODELS = [
-  { id: 'qwen7b', label: 'Qwen 7B', cost: 5, hint: 'Fast and economical' },
-  { id: 'mistral', label: 'Mistral', cost: 15, hint: 'Better answers, higher credit cost' },
+  { id: 'qwen7b', label: 'Qwen Chat', cost: 5, hint: 'Fast answers for chat' },
+  { id: 'qwen-coder', label: 'Qwen Coder', cost: 5, hint: 'Best for code: Studio and RetroStudio scripts' },
 ];
 export const cloudModelId = () => { try { const id = localStorage.getItem('pholama.cloudModel'); return CLOUD_MODELS.some(m => m.id === id) ? id : CLOUD_MODELS[0].id; } catch { return CLOUD_MODELS[0].id; } };
 export const effortKeys = () => Object.keys(EFFORT);
