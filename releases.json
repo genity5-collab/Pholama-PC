@@ -1,6 +1,15 @@
 {
- "latest": "0.9.42",
+ "latest": "0.9.43",
  "releases": [
+  {
+   "version": "0.9.43",
+   "date": "2026-10-23",
+   "title": "Studio replies and update checks",
+   "notes": [
+    "Studio answers from the cloud models no longer come back empty: tool calls are read correctly and replies have room for whole files.",
+    "Fixed an out-of-date offline file check so updates install and cache cleanly."
+   ]
+  },
   {
    "version": "0.9.42",
    "date": "2026-10-14",

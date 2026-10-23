@@ -91,7 +91,7 @@ let bad = 0; const ok = (n, c, x) => { console.log((c ? 'PASS ' : 'FAIL ') + n +
   ok('a discovered update is shown without pressing Check now', /state\.visible/.test(app) && /setInterval\(paintUpdate,\s*60\s*\*\s*1000\)/.test(app));
   ok('the available-update banner installs directly; downloaded updates restart', /onInstall: button => installAvailableUpdate/.test(app) && /JSON\.stringify\(\{ install: true \}\)/.test(app) && /onRestart: \(\) => restartPholama/.test(app));
   ok('the celebration is checked at start-up (with retries)', /celebrateWithRetry\(async \(\) => \{ const v = await/.test(app));
-  ok('the new files work offline (service worker list)', /'studiofx\.js', 'updatefx\.js'/.test(sw));
+  ok('the new files work offline (service worker list)', /'studiofx\.js'/.test(sw) && /'updatefx\.js'/.test(sw));
   ok('all colours come from the theme (no fixed hex) in the update styles', !/\.(updb|upds|updn)[^{]*\{[^}]*#[0-9a-fA-F]{3,6}\b/.test(css.slice(css.indexOf('Update animations:'))));
   ok('every theme variable used in the update styles exists', (() => { const t = css.slice(css.indexOf('Update animations:')); const used = [...new Set([...t.matchAll(/var\(--([a-z]+)/g)].map(x => x[1]))]; const own = ['s', 'x', 'y', 'rot']; const root = css.split('\n')[0]; return used.filter(u => !own.includes(u) && !new RegExp('--' + u + ':').test(root)).length === 0; })());
   ok('motion is off for people who asked for less', /prefers-reduced-motion:reduce\)\{[^}]*\.updb/.test(css));
