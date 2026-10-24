@@ -1,6 +1,17 @@
 {
- "latest": "0.9.53",
+ "latest": "0.9.54",
  "releases": [
+  {
+   "version": "0.9.54",
+   "date": "2026-10-24",
+   "title": "Codebase: talk to the agent while it works, much better clicking, Quick mode, honest live progress",
+   "notes": [
+    "New tool check_chatbox_pholama: type in the new chat line under the Codebase while the agent works. The agent checks it about every minute and before it finishes, and also gets any waiting message at the start of a turn, then says it noticed your message and changes course without being restarted.",
+    "Clicking is much more accurate: screenshots and clicks now use the same real screen pixels, the agent is told the real screen size, and it can click by fraction of the screen (fx and fy from 0 to 1). It is also told to take a screenshot before and after a click.",
+    "No more frozen-looking slow jobs: while the model thinks you see a live Thinking line with seconds. A slow step now retries sooner with a lighter request and says so in plain words.",
+    "New Quick mode for when you are in a hurry: the same self-hosted coder at the same price, but one short step at a time with a shorter memory, so answers come back sooner."
+   ]
+  },
   {
    "version": "0.9.53",
    "date": "2026-10-24",
