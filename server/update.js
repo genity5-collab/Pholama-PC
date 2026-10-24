@@ -135,7 +135,7 @@ const readSet = () => { try { return JSON.parse(fs.readFileSync(SET, 'utf8')); }
 const writeSet = o => { try { fs.mkdirSync(HOME, { recursive: true }); fs.writeFileSync(SET, JSON.stringify(o)); } catch {} };
 // Updates are the user's choice: a new install starts with automatic updates OFF. Someone who already chose (on or off) keeps their choice.
 // Not updating is always fine: an older version keeps working, it just does not get the newer features.
-const status = { current: localVersion(), latest: null, ready: false, checking: false, restarting: false, lastCheck: null, error: null, auto: readSet().auto !== false, whatsNew: null,
+const status = { current: localVersion(), latest: null, ready: false, checking: false, restarting: false, lastCheck: null, error: null, auto: readSet().auto === true, whatsNew: null,
   progress: { phase: 'idle', done: 0, total: 0, percent: 0, speed: 0, step: '' } };
 const setProgress = (phase, step, done = 0, total = 0, speed = 0) => { status.progress = { phase, step, done, total, percent: total > 0 ? Math.min(100, Math.round(done / total * 100)) : 0, speed: Math.round(speed) }; };
 let timer = null, restartHandler = null, checkTask = null;
@@ -185,7 +185,7 @@ function startBackground(hours = 6) {
 // Scheduled OS task: respect the user's auto-update setting and do nothing if the app is running;
 // the live server performs its own more-frequent check and owns restart handling.
 async function offlineCheck({ log = () => {}, isRunning, runUpdate = update } = {}) {
-  if (readSet().auto === false) return { ok: true, skipped: 'automatic-updates-off' };
+  if (readSet().auto !== true) return { ok: true, skipped: 'automatic-updates-off' };   // never chosen = off: updating is the user's decision
   let running = false;
   try {
     if (isRunning) running = await isRunning();
