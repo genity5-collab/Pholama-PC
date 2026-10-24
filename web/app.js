@@ -479,7 +479,7 @@ function runUiActions(list) {
 }
 function paintCloudLeft(r) {
   const el = $('#cloudLeft'); if (!r || r.day_used == null) { el.style.display = 'none'; return; }
-  el.textContent = `${MAX_NAME}: ${r.credits_left ?? Math.max(0, (r.week_cap || 1000) - r.day_used)} of ${r.week_cap || 1000} credits left this week`; el.style.display = '';
+  el.textContent = `${MAX_NAME}: ${r.credits_left ?? Math.max(0, (r.week_cap || 1500) - r.day_used)} of ${r.week_cap || 1500} credits left this week`; el.style.display = '';
 }
 
 const SEND_ICON = '\u2191', STOP_ICON = '\u25A0';
@@ -557,7 +557,7 @@ async function send() {
       const r = await cloudChat(history, effort, token, ac.signal, selectedCloud);
       acc = r.reply; pendingUi = r.actions; msg.text(acc); if (r.thinking) msg.thought(r.thinking, +((performance.now() - t0) / 1000));
       for (const t of (r.tools || [])) msg.log('action', `${t.name}${t.input && (t.input.expression || t.input.question) ? ' ' + (t.input.expression || t.input.question) : ''}`, +((performance.now() - t0) / 1000));
-      msg.log('result', `${MAX_NAME} used ${(r.tools || []).length} tool(s). Week: ${r.day_used}/${r.week_cap || 1000}. Cost: ${r.cost || cloudMeta.cost} credits/word.`, +((performance.now() - t0) / 1000));
+      msg.log('result', `${MAX_NAME} used ${(r.tools || []).length} tool(s). Week: ${r.day_used}/${r.week_cap || 1500}. Cost: ${r.cost || cloudMeta.cost} credits/word.`, +((performance.now() - t0) / 1000));
       msg.usage({ in: history.reduce((n, m) => n + Math.ceil(m.content.length / 4), 0), out: Math.ceil(acc.length / 4), estimated: true, seconds: +((performance.now() - t0) / 1000).toFixed(1) });
       paintCloudLeft(r);
       if (r && r.day_used != null) {
@@ -1257,7 +1257,7 @@ function paintUsage() {
     if (textEl) textEl.textContent = 'Send a message to Agent Max to see your usage';
     if (barsEl) barsEl.style.display = 'none';
   } else {
-    const dUsed = uData.day_used ?? 0, dCap = uData.week_cap ?? 1000;
+    const dUsed = uData.day_used ?? 0, dCap = uData.week_cap ?? 1500;
     if (textEl) textEl.textContent = `This week ${dUsed} of ${dCap} credits`;
     if (barsEl) {
       barsEl.style.display = '';
@@ -1294,7 +1294,7 @@ function paintComposerPill() {
     let uData = null;
     try { uData = JSON.parse(localStorage.getItem('pholama.maxUsage') || 'null'); } catch {}
     const dUsed = uData ? (uData.day_used ?? 0) : 0;
-    const dCap = uData ? (uData.week_cap ?? 1000) : 1000;
+    const dCap = uData ? (uData.week_cap ?? 1500) : 1500;
     cb.textContent = `Max ${dUsed}/${dCap} this week`;
     cb.className = 'pill' + (dUsed >= dCap ? ' zero' : dUsed >= dCap * 0.8 ? ' low' : '');
     cb.title = `Agent Max usage: ${dUsed} of ${dCap} credits used this week. Tap to see usage in Settings.`;
