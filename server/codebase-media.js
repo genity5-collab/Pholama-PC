@@ -13,7 +13,7 @@ const LIMITS = { image: { wait: 0, bytes: 15e6 }, speech: { wait: 0, bytes: 20e6
 const POLL_MS = 4000;
 const PLAIN = {
   login: 'Sign in to Pholama to make files.',
-  limit: 'Not enough credits for this. They come back by themselves as the week moves on.',
+  limit: 'Not enough credits for this. They come back by themselves as the month moves on.',
   network: 'Could not reach the Pholama cloud. Check your connection.',
   busy: 'The generator is busy right now. You were not charged. Try again in a moment.',
   failed: 'It could not be made. You were not charged.',

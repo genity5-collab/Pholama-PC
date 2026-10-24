@@ -63,7 +63,7 @@ for (const bad of ['', '  ', null, 5, {}, 'x'.repeat(201)]) ok('bad window title
 ok('click at a position', P.plan('user_pc', { action: 'click', x: 100, y: 200 }).kind === 'pc_click');
 ok('type text', P.plan('user_pc', { action: 'type', text: 'hello' }).kind === 'pc_type');
 ok('scroll is capped', P.plan('user_pc', { action: 'scroll', amount: 9999 }).amount === 20 && P.plan('user_pc', { action: 'scroll', amount: -9999 }).amount === -20);
-for (const bad of [{ action: 'click', x: -1, y: 5 }, { action: 'click', x: 'a', y: 5 }, { action: 'click', x: 1e9, y: 5 }, { action: 'click' }, { action: 'drag' }, { action: 'type', text: 'x'.repeat(2001) }, {}]) ok('bad mouse request refused: ' + JSON.stringify(bad).slice(0, 36), P.plan('user_pc', bad).ok === false);
+for (const bad of [{ action: 'click', x: -1, y: 5 }, { action: 'click', x: 'a', y: 5 }, { action: 'click', x: 1e9, y: 5 }, { action: 'click' }, { action: 'drag' }, { action: 'type', text: 'x'.repeat(20001) }, {}]) ok('bad mouse request refused: ' + JSON.stringify(bad).slice(0, 36), P.plan('user_pc', bad).ok === false);
 ok('coordinates are whole numbers', P.plan('user_pc', { action: 'click', x: 10.7, y: 20.2 }).x === 11);
 
 // 7. clipboard and images

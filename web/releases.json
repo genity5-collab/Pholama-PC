@@ -1,6 +1,20 @@
 {
- "latest": "0.9.51",
+ "latest": "0.9.52",
  "releases": [
+  {
+   "version": "0.9.52",
+   "date": "2026-10-24",
+   "title": "Codebase: memory, sessions, working web search and typing",
+   "notes": [
+    "Codebase now has a memory. It remembers facts across runs, you can add or delete them in the new Memory panel, and it can save and forget things itself.",
+    "Every run is saved as a session you can look at or delete. The AI is told about your last sessions when it starts.",
+    "Web search from the cloud now works: it reads pages and search results as text without opening anything on your PC.",
+    "Typing into other text boxes now pastes the exact text (accents, symbols and long text work) and gives your clipboard back.",
+    "If the AI repeats the same step with the same result it is nudged, then stopped, instead of looping.",
+    "Notes show a green tick for what worked and a red cross for what failed, in Notepad and on the page.",
+    "The AI can read the Pholama app folder but can never change it. The page is bigger and easier to read, and two duplicated buttons were fixed."
+   ]
+  },
   {
    "version": "0.9.51",
    "date": "2026-10-24",

@@ -43,7 +43,7 @@ if(Test-Path -LiteralPath $env:PH_A){ throw 'That file already exists.' }
   clip_set: `Set-Clipboard -Value ([Console]::In.ReadToEnd()); Write-Output "copied"`,
   clip_get: `Get-Clipboard -Raw`,
   img_copy: `Add-Type -AssemblyName System.Windows.Forms,System.Drawing; [System.Windows.Forms.Clipboard]::SetImage([System.Drawing.Image]::FromFile($env:PH_A)); Write-Output "image copied"`,
-  paste: `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^v'); Write-Output "pasted"`,
+  paste: `Add-Type -AssemblyName System.Windows.Forms; Start-Sleep -Milliseconds 150; [System.Windows.Forms.SendKeys]::SendWait('^v'); Write-Output "pasted"`,
   // the agent's own small pointer: it sends the click to the window under that point; the user's real mouse is not moved.
   // A REAL mouse: the cursor moves to the spot and the button is pressed the way a hand would. (The old background message was ignored by browsers.)
   // PH_A = x, PH_B = y, PH_N = what to do: move | click | double | right | scroll:<notches, negative = down>
@@ -69,8 +69,9 @@ switch -Regex ($do){
 }`,
   // Wait: a short pause so a page can load (the planner limits it to 1 to 20 seconds).
   pc_wait: `Start-Sleep -Seconds ([int]$env:PH_A); Write-Output "waited $($env:PH_A) seconds"`,
-  // Text is typed literally: every SendKeys special character is escaped, and a line break becomes the Enter key. PH_A=1 presses Enter at the end.
-  pc_type: `Add-Type -AssemblyName System.Windows.Forms; $t=[Console]::In.ReadToEnd() -replace "\r\n","\n"; $t=$t -replace '([+^%~(){}\\[\\]])','{$1}'; $t=$t -replace "\n","{ENTER}"; if($env:PH_A -eq '1'){$t=$t+'{ENTER}'}; [System.Windows.Forms.SendKeys]::SendWait($t); Write-Output "typed"`,
+  // Text goes in by PASTING, not by key presses: every character arrives exactly (accents, symbols, tabs, line breaks, any length) and it is instant.
+  // The person's own clipboard is put back afterwards. PH_A=1 presses Enter at the end.
+  pc_type: `Add-Type -AssemblyName System.Windows.Forms; $t=[Console]::In.ReadToEnd(); $old=$null; try{$old=Get-Clipboard -Raw -ErrorAction Stop}catch{}; Set-Clipboard -Value $t; Start-Sleep -Milliseconds 120; [System.Windows.Forms.SendKeys]::SendWait('^v'); Start-Sleep -Milliseconds 250; if($env:PH_A -eq '1'){[System.Windows.Forms.SendKeys]::SendWait('{ENTER}')}; if($old -ne $null){Start-Sleep -Milliseconds 150; Set-Clipboard -Value $old}else{Set-Clipboard -Value ' '}; Write-Output "typed"`,
   pc_key: `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait($env:PH_A); Write-Output "pressed"`,
 };
 

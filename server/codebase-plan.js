@@ -49,6 +49,16 @@ const PLANNERS = {
     if (!t.trim()) return no('A note needs text.');
     return { ok: true, kind: 'note', text: t.slice(0, 2000) };
   },
+  remember(a) {
+    const t = ['text', 'fact', 'memory', 'content', 'note', 'value'].map(k => a[k]).find(v => isStr(v) && v.trim());
+    if (!t) return no('Give the fact to remember in "text".');
+    return { ok: true, kind: 'remember', text: t };
+  },
+  forget(a) {
+    const id = ['id', 'memory_id', 'key'].map(k => a[k]).find(v => isStr(v) && v.trim());
+    if (!id) return no('Give the id of the memory to forget in "id".');
+    return { ok: true, kind: 'forget', id: id.trim().slice(0, 40) };
+  },
   next_task(a) { return { ok: true, kind: 'next_task' }; },
   screenshot_(a) { return { ok: true, kind: 'screenshot', scale: 0.5 }; },
   pull_file(a) { const r = needPath(a, 'path', 'read'); return r.ok ? { ok: true, kind: 'pull', from: r.p } : r; },
@@ -92,7 +102,12 @@ const PLANNERS = {
   },
   close_window(a) { if (!isStr(a.title) || !a.title.trim() || a.title.length > MAX_TITLE) return no('Give the exact window title.'); return { ok: true, kind: 'close', title: a.title }; },
   pc_browse(a) { if (!isStr(a.url) || !/^https?:\/\/[^\s]{1,2000}$/i.test(a.url)) return no('pc_browse needs an http or https address.'); return { ok: true, kind: 'open', target: a.url, web: true }; },
-  cloud_browse(a) { if (!isStr(a.url) || !/^https?:\/\/[^\s]{1,2000}$/i.test(a.url)) return no('cloud_browse needs an http or https address.'); return { ok: true, kind: 'cloud_browse', url: a.url }; },
+  cloud_browse(a) {
+    const q = String(a.query || a.search || a.q || '').trim();
+    if (q) { if (q.length > 300) return no('A search can be up to 300 characters.'); return { ok: true, kind: 'cloud_browse', query: q }; }
+    if (!isStr(a.url) || !/^https?:\/\/[^\s]{1,2000}$/i.test(a.url)) return no('cloud_browse needs a "query" to search or an http or https "url" to read.');
+    return { ok: true, kind: 'cloud_browse', url: a.url };
+  },
   copy_text(a) { if (!isStr(a.text) || a.text.length > MAX_TEXT) return no('Give the text to copy (up to 20,000 characters).'); return { ok: true, kind: 'clip_set', text: a.text }; },
   paste_text() { return { ok: true, kind: 'paste' }; },
   copy_paste_image(a) { if (a.action === 'copy') { const r = needPath(a, 'path', 'read'); return r.ok ? { ok: true, kind: 'img_copy', path: r.p } : r; } if (a.action === 'paste') return { ok: true, kind: 'paste' }; return no('action must be "copy" or "paste".'); },
@@ -109,7 +124,7 @@ const PLANNERS = {
     }
     if (action === 'type') {
       const txt = a.text == null ? a.value : a.text;
-      if (typeof txt !== 'string' || !txt.length || txt.length > 2000) return no('Give the text to type (up to 2,000 characters) in "text".');
+      if (typeof txt !== 'string' || !txt.length || txt.length > MAX_TEXT) return no('Give the text to type (up to 20,000 characters) in "text".');
       return { ok: true, kind: 'pc_type', text: txt, enter: a.enter === true || a.submit === true };
     }
     if (action === 'key') {

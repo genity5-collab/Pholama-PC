@@ -28,6 +28,16 @@ function realish(p) {
   return norm(p);
 }
 
+// The folders Pholama itself runs from (where its code lives). The agent may READ them but can never WRITE to them: a model that edits the app it is running inside can break it.
+// Updates come through the normal updater, and changes to Pholama are pushed by the owner, not by the agent.
+function appFolders() {
+  const out = [path.resolve(__dirname, '..')];
+  try { out.push(path.join(os.homedir(), 'Pholama')); } catch {}
+  if (process.env.PHOLAMA_APP_DIR) out.push(process.env.PHOLAMA_APP_DIR);
+  return out.filter(Boolean).map(realish);
+}
+const inApp = real => appFolders().some(a => inside(real, a));
+
 // Folders that can never be granted: the whole disk, the home folder itself, the system, and the folder that holds Pholama's own data.
 function refuseRoot(dir) {
   const real = realish(dir), home = realish(os.homedir()), data = realish(process.env.PHOLAMA_HOME || DIR);
@@ -40,6 +50,7 @@ function refuseRoot(dir) {
     : ['/etc', '/usr', '/bin', '/sbin', '/lib', '/lib64', '/boot', '/dev', '/proc', '/sys', '/var', '/opt', '/root', '/System', '/Library', '/Applications'];
   for (const s of sys) if (s && (inside(real, realish(s)) || inside(realish(s), real))) return 'That is a system folder. Grant a project folder instead.';
   if (SECRET_DIRS.test(real)) return 'That folder holds keys or logins. Choose another one.';
+  if (appFolders().some(a => same(real, a) || inside(real, a) || inside(a, real))) return 'That is the Pholama app folder. The agent cannot edit the app it runs in. Choose your project folder instead.';
   return null;
 }
 
@@ -77,8 +88,9 @@ function check(p, need = 'read') {
   let best = null;
   for (const g of read()) { const gd = realish(g.dir); if (inside(real, gd) && (!best || gd.length > best.dir.length)) best = { dir: gd, mode: g.mode === 'write' ? 'write' : 'read' }; }
   if (!best) return { ok: false, why: 'That is outside the folders you allowed. Grant its folder first.' };
+  if (need === 'write' && inApp(real)) return { ok: false, why: 'That is the Pholama app folder. The agent can read it but never change it.' };
   if (need === 'write' && best.mode !== 'write') return { ok: false, why: 'That folder is read-only for the agent. Grant it as read and write to change files in it.' };
   return { ok: true, real, mode: best.mode, grant: best.dir };
 }
 
-module.exports = { list, grant, revoke, check, realish, inside, refuseRoot, downloadsDir, ensureDownloads, MAX_GRANTS, MAX_FILE_BYTES, SECRET_NAMES, DOWNLOADS };
+module.exports = { list, grant, revoke, check, appFolders, realish, inside, refuseRoot, downloadsDir, ensureDownloads, MAX_GRANTS, MAX_FILE_BYTES, SECRET_NAMES, DOWNLOADS };

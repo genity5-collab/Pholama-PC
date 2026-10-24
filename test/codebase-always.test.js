@@ -25,7 +25,7 @@ const U = a => P.plan('user_pc', a);
 let r = U({ action: 'type', text: 'hello' }); ok('typing is planned', r.ok && r.kind === 'pc_type' && r.text === 'hello' && r.enter === false);
 r = U({ action: 'Type', text: 'a\nb', enter: true }); ok('typing: any capital letters, new lines and enter:true are kept', r.ok && r.text === 'a\nb' && r.enter === true);
 r = U({ action: 'typing', value: 'via value' }); ok('typing: "value" works and the word "typing" means type', r.ok && r.text === 'via value');
-ok('typing: empty / huge / missing text refused', !U({ action: 'type', text: '' }).ok && !U({ action: 'type', text: 'x'.repeat(2001) }).ok && !U({ action: 'type' }).ok && !U({ action: 'type', text: 5 }).ok);
+ok('typing: empty / huge / missing text refused', !U({ action: 'type', text: '' }).ok && U({ action: 'type', text: 'x'.repeat(20000) }).ok && !U({ action: 'type', text: 'x'.repeat(20001) }).ok && !U({ action: 'type' }).ok && !U({ action: 'type', text: 5 }).ok);
 r = U({ action: 'key', key: 'enter' }); ok('key enter -> {ENTER}', r.ok && r.kind === 'pc_key' && r.send === '{ENTER}');
 r = U({ action: 'press', key: 'Ctrl + L' }); ok('key: "Ctrl + L" and "press" are understood', r.ok && r.send === '^l');
 r = U({ action: 'key', key: 'Return' }); ok('key: Return = enter', r.ok && r.send === '{ENTER}');
@@ -39,7 +39,7 @@ ok('an unknown action lists the choices', /search/.test(U({ action: 'fly' }).say
 
 // ---- the real script text is safe ----
 const W = fs.readFileSync(path.join(__dirname, '..', 'server', 'codebase-win.js'), 'utf8');
-ok('typing escapes special characters, turns new lines into Enter, and presses Enter only when asked', /pc_type:[^\n]*\{ENTER\}[^\n]*PH_A -eq '1'/.test(W));
+ok('typing PASTES the text (exact characters, any length), restores the old clipboard, and presses Enter only when asked', /pc_type:[^\n]*Set-Clipboard -Value \$t[^\n]*\^v[^\n]*PH_A -eq '1'[^\n]*Set-Clipboard -Value \$old/.test(W) && !/pc_type:[^\n]*\$t -replace/.test(W));
 ok('keys come from the fixed list only (the script just sends what the planner chose)', /pc_key:[^\n]*SendWait\(\$env:PH_A\)/.test(W) && /case 'pc_key': return ps\('pc_key', \{ a: pl\.send \}\)/.test(W));
 
 // ---- the session answers at once for an always-allowed kind, and still asks otherwise ----

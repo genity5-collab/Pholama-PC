@@ -50,7 +50,7 @@ ok('no result, no line', endLine(null) === '');
 // ---- a small fake page so the click handlers can be driven ----
 function fakePage() {
   const els = {}; const mk = (id, extra = {}) => (els[id] = { id, value: '', disabled: false, textContent: '', className: '', innerHTML: '', dataset: {}, children: [], listeners: {}, onclick: null, addEventListener(t, f) { this.listeners[t] = f; }, querySelector() { return null; }, querySelectorAll() { return []; }, insertAdjacentHTML(_, h) { this.innerHTML += h; this.children.push({}); }, removeChild() { this.children.shift(); }, get firstChild() { return this.children[0]; }, get lastElementChild() { return null; }, ...extra });
-  ['#cbsTask', '#cbsKind', '#cbsStart', '#cbsStop', '#cbsMsg', '#cbsFeed', '#cbsGrants', '#cbsDir', '#cbsMode', '#cbsGrant', '#cbsAlways', '#cbsAlwaysOff', '#cbsClear', '#cbsMinutes'].forEach(k => mk(k));
+  ['#cbsTask', '#cbsKind', '#cbsStart', '#cbsStop', '#cbsMsg', '#cbsFeed', '#cbsGrants', '#cbsDir', '#cbsMode', '#cbsGrant', '#cbsAlways', '#cbsAlwaysOff', '#cbsClear', '#cbsMinutes', '#cbsMem', '#cbsMemText', '#cbsMemAdd', '#cbsSess', '#cbsSessClear'].forEach(k => mk(k));
   els['#cbsKind'].value = 'simple'; els['#cbsMinutes'].value = '45'; els['#cbsMode'].value = 'read';
   const root = { innerHTML: '', querySelector: s => els[s] || null };
   return { root, els };

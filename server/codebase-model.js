@@ -13,7 +13,7 @@ const KEEP_OTHER = 40;   // the cloud keeps the last 12; sending more is wasted 
 
 const PLAIN = {
   login: 'Sign in to Pholama to use Codebase.',
-  limit: 'Not enough credits right now. They come back by themselves as the week moves on.',
+  limit: 'Not enough credits right now. They come back by themselves as the month moves on.',
   network: 'Could not reach the Pholama cloud. Check your connection.',
   busy: 'The agent could not answer. Try again in a moment.',
   stopped: 'Stopped.',

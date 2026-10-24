@@ -9,6 +9,7 @@ const T = require('./codebase-tools');
 const PLAN = require('./codebase-plan');
 const SESSION = require('./codebase-session');
 const MODEL = require('./codebase-model');
+const MEM = require('./codebase-memory');
 
 const MAX_BODY = 64 * 1024;          // a task, an answer or a grant is small; a bigger body is refused before it is read in full
 const MAX_UPLOAD = 8 * 1024 * 1024;  // a screenshot or a picture the person attaches
@@ -25,7 +26,7 @@ function readBody(req, limit) {
 
 // Builds the tools map the loop uses: every tool goes planner (grants, system folders, blocked commands) THEN the executor.
 function buildTools(deps) {
-  const { win, github, media, opened = new Set(), getGithubToken = () => '', readImage, fetchFn } = deps;
+  const { win, github, media, web, opened = new Set(), getGithubToken = () => '', readImage, fetchFn } = deps;
   const tools = {};
   for (const meta of T.list()) {
     const name = meta.name;
@@ -33,9 +34,12 @@ function buildTools(deps) {
       const pl = PLAN.plan(name, args);
       if (!pl || pl.ok !== true) return 'REFUSED: ' + ((pl && pl.say) || 'not allowed');
       if (pl.kind === 'next_task') return 'Next task started.';
+      if (pl.kind === 'remember') { const m = deps.memory || require('./codebase-memory'); const x = m.remember(pl.text); return x.ok ? x.text : 'ERROR: ' + x.text; }
+      if (pl.kind === 'forget') { const m = deps.memory || require('./codebase-memory'); const x = m.forget(pl.id); return x.ok ? x.text : 'ERROR: ' + x.text; }
       if (pl.kind === 'note') { if (!deps.notepad) return 'Noted.'; const n = await deps.notepad.note(pl.text); return n.ok ? 'Noted.' + (n.live ? ' (shown in Notepad)' : '') : 'ERROR: ' + n.text; }
       let r;
       if (pl.kind === 'github_read' || pl.kind === 'github_write') r = await github.execute(pl, { token: getGithubToken(), fetchFn });
+      else if (pl.kind === 'cloud_browse') r = deps.web ? await deps.web.execute(pl) : { ok: false, text: 'Web search is not available right now.' };   // fetched here, nothing opens on the PC
       else if (pl.kind === 'make') r = media && typeof media.execute === 'function' ? await media.execute(pl, { signal: ctx && ctx.signal }) : { ok: false, text: 'Making files is not available right now.' };   // a generator never reaches the Windows runner
       else r = await win.execute(pl, { opened, readImage });
       if (r && r.ok && r.shot && ctx && typeof ctx.shot === 'function') ctx.shot(r.shot);   // the loop attaches it to the log row
@@ -56,8 +60,14 @@ function create(deps) {
     close: async title => deps.win.execute({ ok: true, kind: 'close', title }, {}),   // no 'opened' set is passed, so this closes only the Pholama notes window by its exact title
   }) : null) : deps.notepad;
   const media = deps.media || require('./codebase-media').create({ getToken: () => state.token, fetchFn, url: deps.mediaUrl, log, onCredits: c => { state.credits = c; } });   // same login as the model, held in memory for one run only
-  const tools = deps.tools || buildTools({ ...deps, media, notepad, getGithubToken: deps.getGithubToken || (() => state.gh) });
-  const session = SESSION.create({ model, tools, budget, now, sleep: deps.sleep });
+  // Cloud search: the real chat helpers (safe address check, redirect re-check, DuckDuckGo), loaded only when first used so tests can inject a fake.
+  const web = deps.web || require('./codebase-web').create({
+    fetchText: (u, ms) => require('./agent').fetchText(u, ms),
+    webSearch: o => require('./agent').webSearch(o, null),
+    checkLink: u => require('./sources').checkLink(u),
+  });
+  const tools = deps.tools || buildTools({ ...deps, media, web, notepad, getGithubToken: deps.getGithubToken || (() => state.gh) });
+  const session = SESSION.create({ model, tools, budget, now, sleep: deps.sleep, getContext: () => MEM.context(), onEnd: x => MEM.saveSession({ task: x.task, notes: x.notes, result: x.result, now }), onResult: r => { if (notepad && typeof notepad.mark === 'function') notepad.mark(r.good, r.what, r.detail).catch(() => {}); } });   // a tick or a cross for every step, written into the Notepad
   // The login lives only as long as the run: when the run ends (done, stopped, out of time or credits) it is wiped.
   const wipeWhenDone = () => { const t = setInterval(() => { const st = session.state(); if (st.done || !st.running) { state.token = ''; state.gh = ''; if (notepad) notepad.finish().catch(() => {}); clearInterval(t); } }, 250); if (t.unref) t.unref(); };
 
@@ -84,6 +94,9 @@ function create(deps) {
         if (!img) { send(res, 404, { ok: false }); return true; }
         res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Length': img.length }); res.end(img); return true;
       }
+      if (p === '/api/codebase/memory' && method === 'GET') { send(res, 200, { memory: MEM.listMemory(), max: MEM.MAX_MEMORY }); return true; }
+      if (p === '/api/codebase/sessions' && method === 'GET') { send(res, 200, { sessions: MEM.listSessions() }); return true; }
+      if (p.startsWith('/api/codebase/sessions/') && method === 'GET') { const s = MEM.getSession(decodeURIComponent(p.slice(23))); send(res, s ? 200 : 404, s || { error: 'No such session.' }); return true; }
       if (p === '/api/codebase/usage' && method === 'GET') {   // the usage bar on the page: 5,000 / 7-hour rests / 15,000 per month
         let tz = 'UTC'; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch {}
         send(res, 200, { ...budget.view(budget.load(now()), now()), now: now(), tz }); return true;
@@ -120,6 +133,9 @@ function create(deps) {
         send(res, r.ok ? 200 : 409, r.ok ? { ok: true } : { error: r.error }); return true;
       }
       if (p === '/api/codebase/stop' && method === 'POST') { const r = session.stop(); state.token = ''; state.gh = ''; if (r.ok && notepad) notepad.finish().catch(() => {}); send(res, r.ok ? 200 : 409, r.ok ? { ok: true } : { error: r.error }); return true; }
+      if (p === '/api/codebase/memory' && method === 'POST') { const x = MEM.remember(String(body.text || '')); send(res, x.ok ? 200 : 400, x.ok ? { ok: true, memory: MEM.listMemory() } : { error: x.text }); return true; }
+      if (p === '/api/codebase/memory' && method === 'DELETE') { if (body.all === true) { MEM.clearMemory(); send(res, 200, { ok: true, memory: [] }); return true; } const x = MEM.forget(String(body.id || '')); send(res, x.ok ? 200 : 404, x.ok ? { ok: true, memory: MEM.listMemory() } : { error: x.text }); return true; }
+      if (p === '/api/codebase/sessions' && method === 'DELETE') { if (body.all === true) { MEM.clearSessions(); send(res, 200, { ok: true, sessions: [] }); return true; } const x = MEM.deleteSession(String(body.id || '')); send(res, x.ok ? 200 : 404, x.ok ? { ok: true, sessions: MEM.listSessions() } : { error: 'No such session.' }); return true; }
       if (p === '/api/codebase/always' && method === 'POST') { const r2 = require('./codebase-always').add(String(body.tool || '')); send(res, r2.ok ? 200 : 400, r2); return true; }
       if (p === '/api/codebase/always' && method === 'DELETE') { const A = require('./codebase-always'); send(res, 200, body.tool ? A.remove(String(body.tool)) : A.clear()); return true; }
       if (p === '/api/codebase/grants' && method === 'POST') {

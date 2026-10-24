@@ -6,6 +6,7 @@
 const os = require('os'), path = require('path');
 const T = require('./codebase-tools');
 
+const OK_MARK = '\u2705', BAD_MARK = '\u274C';   // a green tick for what worked, a red cross for what failed
 const FILE_NAME = 'Pholama-Agent-Notes.txt';
 const MAX_NOTE = 600;            // one note line
 const MAX_FILE_BYTES = 200 * 1024;  // after this the file starts again, so Notepad never gets heavy
@@ -28,8 +29,11 @@ function create(deps = {}) {
     try { await write(file, head); bytes = Buffer.byteLength(head); return { ok: true, file }; } catch { disabled = true; return { ok: false }; }
   }
 
+  // The mark that leads a note: a note the agent started with a tick or a cross keeps it (once); a plain note stays plain.
+  const withMark = t => { const m = /^(?:\u2705|\u2714\uFE0F?|\u2611\uFE0F?|\u274C|\u274E|\u2716\uFE0F?)\s*/.exec(t); if (!m) return t; const good = /^(?:\u2705|\u2714|\u2611)/.test(m[0]); return (good ? OK_MARK : BAD_MARK) + ' ' + t.slice(m[0].length); };
+
   async function note(text) {
-    const t = clean(T.redact(String(text || '')));
+    const t = withMark(clean(T.redact(String(text || ''))));
     if (!t) return { ok: false, text: 'A note needs text.' };
     if (disabled) return { ok: true, text: 'Noted.', live: false };
     const l = line(t);
@@ -45,6 +49,14 @@ function create(deps = {}) {
     return { ok: true, text: 'Noted.', live: opened, file };
   }
 
+  // The result of one tool call, written as its own line: a tick when it worked, a cross when it did not.
+  // `what` is the tool and its target (already hidden of secrets by the caller), `detail` is the short reason when it failed.
+  async function mark(good, what, detail) {
+    const w = clean(T.redact(String(what || ''))).slice(0, 160), d = clean(T.redact(String(detail || ''))).slice(0, 240);
+    if (!w) return { ok: false };
+    return note((good ? OK_MARK : BAD_MARK) + ' ' + w + (!good && d ? ': ' + d : ''));
+  }
+
   // The run is over: close the Notepad window if (and only if) this module opened it.
   async function finish() {
     if (!opened) return { ok: true, closed: false };
@@ -52,7 +64,7 @@ function create(deps = {}) {
     try { await close(TITLE); return { ok: true, closed: true }; } catch { return { ok: true, closed: false }; }
   }
 
-  return { begin, note, finish, file, TITLE, state: () => ({ count, bytes, opened, disabled }) };
+  return { begin, note, mark, finish, file, TITLE, state: () => ({ count, bytes, opened, disabled }) };
 }
 
-module.exports = { create, clean, stamp, FILE_NAME, MAX_NOTE, MAX_FILE_BYTES, TITLE };
+module.exports = { create, clean, stamp, OK_MARK, BAD_MARK, FILE_NAME, MAX_NOTE, MAX_FILE_BYTES, TITLE };

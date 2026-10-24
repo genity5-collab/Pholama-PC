@@ -5,7 +5,7 @@ const loop = require('./codebase-loop');
 const MAX_EVENTS = 500, ASK_TIMEOUT_MS = 10 * 60 * 1000;
 
 function create(deps) {
-  const { model, tools, budget, now = Date.now, askTimeout = ASK_TIMEOUT_MS, sleep } = deps;
+  const { model, tools, budget, now = Date.now, askTimeout = ASK_TIMEOUT_MS, sleep, onResult, getContext, onEnd } = deps;
   let run = null;   // { id, events[], waiters:Set, pending:Map(callId -> {resolve,timer,tool,level}), done, result, stop }
   let counter = 0;
 
@@ -26,10 +26,12 @@ function create(deps) {
       if (timer.unref) timer.unref();
       r.pending.set(req.callId, { resolve, timer, tool: req.tool, level: req.level });
     });
-    const emit = e => push(r, e);
+    const noteLog = [];   // the notes the agent wrote this run, kept for the saved session
+    const emit = e => { if (e && e.kind === 'tool' && e.tool === 'note_') { try { noteLog.push(String(JSON.parse(e.args).text || e.args)); } catch { noteLog.push(String(e.args || '')); } } push(r, e); };
     const guardedBudget = { gate: () => (r.stopped ? { ok: false, say: 'Stopped.' } : budget.gate()), spend: n => budget.spend(n) };
-    loop.run(text, { model, tools, ask, budget: guardedBudget, emit, now, signal: ac.signal, sleep, maxMinutes: Number(opts && opts.maxMinutes) || undefined }).then(res => { r.result = res; }, () => { r.result = { ok: false, stopped: 'error' }; }).then(() => {
+    loop.run(text, { model, tools, ask, budget: guardedBudget, emit, now, signal: ac.signal, sleep, onResult, context: typeof getContext === 'function' ? (() => { try { return getContext(); } catch { return ''; } })() : '', maxMinutes: Number(opts && opts.maxMinutes) || undefined }).then(res => { r.result = res; }, () => { r.result = { ok: false, stopped: 'error' }; }).then(() => {
       r.done = true; for (const p of r.pending.values()) { clearTimeout(p.timer); p.resolve({ allowed: false }); } r.pending.clear();
+      if (typeof onEnd === 'function') { try { onEnd({ task: text, notes: noteLog, result: r.result }); } catch {} }   // save the session; a problem here never changes how the run ended
       push(r, { kind: 'end', at: now(), ok: !!(r.result && r.result.ok) });
     });
     return { ok: true, id: r.id };

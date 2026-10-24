@@ -33,7 +33,7 @@ const ok = (n, c) => { if (c) { pass++; console.log('PASS ' + n); } else { fail+
   ok('close matches the exact title only (-eq, not -like)', /MainWindowTitle -eq \$t/.test(W.PS.close) && !/-like|-match/.test(W.PS.close));
   // The SendKeys escape, tested on real text: keys that act as shortcuts must come out wrapped in braces.
   const esc = t => t.replace(/([+^%~(){}\[\]])/g, '{$1}');
-  ok('the source escapes SendKeys specials with the same pattern', SCRIPT_BLOCK.includes("-replace '([+^%~(){}\\\\[\\\\]])','{$1}'"));
+  ok('typing pastes the exact text (no per-key escaping needed) and puts the old clipboard back', /pc_type:[^\n]*Set-Clipboard -Value \$t[^\n]*SendWait\('\^v'\)[^\n]*Set-Clipboard -Value \$old/.test(SCRIPT_BLOCK));
   for (const k of ['+', '^', '%', '~', '(', ')', '{', '}', '[', ']']) ok('SendKeys special is wrapped: ' + k, esc('a' + k + 'b') === 'a{' + k + '}b');
   ok('ordinary text is untouched', esc('hello world 123') === 'hello world 123');
 

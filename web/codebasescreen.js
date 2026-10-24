@@ -7,6 +7,7 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"'`]/g, c => ({ '&': '&
 const clip = (s, n) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, n);
 
 // What a person reads for each event the server streams. No model or provider name is ever shown.
+export const MARKS = { ok: '\u2705', x: '\u274C' };
 export function describe(e) {
   if (!e || typeof e !== 'object') return null;
   const tool = clip(e.tool, 40);
@@ -14,16 +15,16 @@ export function describe(e) {
     case 'tool': {
       if (tool === 'note_') return { tone: 'note', tag: 'NOTE', text: clip(String(e.args || '').replace(/^\{.*?"(?:text|content|note|summary|message)":"/, '').replace(/"\}*$/, ''), 400) || 'Note' };
       const bad = /^(REFUSED|ERROR):/.test(String(e.result || ''));
-      if (tool === 'screenshot_') return { tone: bad ? 'bad' : 'ok', tag: 'SCREEN', text: 'Screenshot' + (e.cost ? '' : ''), result: clip(String(e.result || '').split('\nOPEN WINDOWS')[0], 500), cost: e.cost || 0, shot: /^[a-f0-9]{16}$/.test(String(e.shot || '')) ? e.shot : '' };
-      return { tone: bad ? 'bad' : 'ok', tag: 'TOOL', text: tool + (e.args ? ' ' + clip(e.args, 220) : ''), result: clip(e.result, 500), cost: e.cost || 0 };
+      if (tool === 'screenshot_') return { tone: bad ? 'bad' : 'ok', mark: bad ? 'x' : 'ok', tag: 'SCREEN', text: 'Screenshot' + (e.cost ? '' : ''), result: clip(String(e.result || '').split('\nOPEN WINDOWS')[0], 500), cost: e.cost || 0, shot: /^[a-f0-9]{16}$/.test(String(e.shot || '')) ? e.shot : '' };
+      return { tone: bad ? 'bad' : 'ok', mark: bad ? 'x' : 'ok', tag: 'TOOL', text: tool + (e.args ? ' ' + clip(e.args, 220) : ''), result: clip(e.result, 500), cost: e.cost || 0 };
     }
     case 'ask': return { tone: 'ask', tag: 'ASK', text: tool + ' is waiting for you', callId: e.callId, strict: e.level === 'strict', args: clip(e.args, 400), tool };
     case 'answered': return { tone: 'info', tag: 'YOU', text: e.allowed === false ? 'You said No' : (e.auto ? 'Allowed automatically (Always allow is on)' : 'You said Yes') };
     case 'expired': return { tone: 'warn', tag: 'TIME', text: 'No answer in time, so it was not done' };
-    case 'refused': return { tone: 'bad', tag: 'BLOCKED', text: clip(e.say || e.reason, 240) || 'That was blocked' };
+    case 'refused': return { tone: 'bad', mark: 'x', tag: 'BLOCKED', text: clip(e.say || e.reason, 240) || 'That was blocked' };
     case 'retry': return { tone: 'mute', tag: 'AGAIN', text: clip(e.say, 160) || 'Trying again' };
     case 'stopped': return { tone: 'warn', tag: 'STOP', text: clip(e.say, 240) || 'Stopped' };
-    case 'done': return { tone: 'good', tag: 'DONE', text: clip(e.say || e.summary, 600) || 'Finished' };
+    case 'done': return { tone: 'good', mark: 'ok', tag: 'DONE', text: clip(e.say || e.summary, 600) || 'Finished' };
     default: return null;   // end, hello and anything unknown stay out of the feed
   }
 }
@@ -35,7 +36,7 @@ export function rowHtml(d) {
     ? '<div class="cbs-ask' + (d.strict ? ' strict' : '') + '" data-call="' + esc(d.callId) + '"><b>' + esc(d.tool) + '</b> wants to run' + (d.strict ? ' <em>(asked every time)</em>' : '') + (d.args ? ':<pre>' + esc(d.args) + '</pre>' : '') +
       '<div class="cbs-btns"><button class="cbs-allow" data-allow="1">Allow</button>' + (d.strict ? '' : '<button class="cbs-always" data-always="' + esc(d.tool) + '" title="Allow this kind of request from now on. You can turn it off in the list on the right.">Always allow ' + esc(d.tool) + '</button>') + '<button class="cbs-deny" data-allow="0">Deny</button></div></div>'
     : '';
-  return '<li class="cbs-row ' + esc(d.tone) + '"><span class="cbs-tag">' + esc(d.tag) + '</span><span class="cbs-txt">' + esc(d.text) + '</span>' +
+  return '<li class="cbs-row ' + esc(d.tone) + '">' + (MARKS[d.mark] ? '<span class="cbs-mark">' + MARKS[d.mark] + '</span>' : '') + '<span class="cbs-tag">' + esc(d.tag) + '</span><span class="cbs-txt">' + esc(d.text) + '</span>' +
     (d.cost ? '<span class="cbs-cost">' + esc(d.cost) + ' credits</span>' : '') + (d.result ? '<div class="cbs-res">' + esc(d.result) + '</div>' : '') +
     (d.shot ? '<a class="cbs-shot" href="/api/codebase/shot/' + esc(d.shot) + '" target="_blank" rel="noopener"><img alt="Screenshot the AI took" loading="lazy" src="/api/codebase/shot/' + esc(d.shot) + '"></a>' : '') + card + '</li>';
 }
@@ -59,7 +60,6 @@ export function mountCodebase(root, deps = {}) {
           '<div class="cbs-task"><textarea id="cbsTask" rows="3" maxlength="4000" placeholder="Tell it what to build or fix. It works step by step and asks before changing anything."></textarea>' +
           '<div class="cbs-bar"><select id="cbsKind" aria-label="How hard is the job"><option value="simple">Simple edit</option><option value="hard">Debugging or a big change</option></select>' +
           '<select id="cbsMinutes" aria-label="Longest it may work"><option value="15">Up to 15 min</option><option value="45" selected>Up to 45 min</option><option value="90">Up to 90 min</option><option value="240">Up to 4 hours</option></select>' +
-          '<select id="cbsMinutes" aria-label="Longest it may work"><option value="15">Up to 15 min</option><option value="45" selected>Up to 45 min</option><option value="90">Up to 90 min</option><option value="240">Up to 4 hours</option></select>' +
           '<button id="cbsStart" class="cbs-go">Start</button><button id="cbsStop" class="cbs-stop" disabled>Stop</button><button id="cbsClear" title="Empty the list below (it does not stop anything)">Clear</button><button id="cbsClear" title="Empty the list below (it does not stop anything)">Clear</button><span id="cbsMsg" class="cbs-msg" role="status"></span></div></div>' +
           '<ul id="cbsFeed" class="cbs-feed" aria-live="polite"><li class="cbs-empty">Nothing yet. Give it a folder, then a task.</li></ul>' +
         '</section>' +
@@ -67,6 +67,10 @@ export function mountCodebase(root, deps = {}) {
           '<div class="cbs-add"><input id="cbsDir" type="text" placeholder="C:\\Users\\you\\my-project" aria-label="Folder path"><select id="cbsMode" aria-label="Access"><option value="read">Read only</option><option value="write">Read and change</option></select><button id="cbsGrant">Allow</button></div>' +
           '<p class="cbs-hint">It can only touch folders listed here. Deleting and installing are always asked about, every time.</p>' +
           '<h3 class="cbs-h3b">Always allowed</h3><ul id="cbsAlways" class="cbs-grants"></ul><button id="cbsAlwaysOff" class="cbs-alloff">Turn off all</button>' +
+          '<h3 class="cbs-h3b">Memory</h3><ul id="cbsMem" class="cbs-grants"></ul>' +
+          '<div class="cbs-add"><input id="cbsMemText" type="text" maxlength="400" placeholder="Something it should always remember" aria-label="Add to memory"><button id="cbsMemAdd">Remember</button></div>' +
+          '<p class="cbs-hint">The agent reads this at the start of every run, and can add or remove things itself.</p>' +
+          '<h3 class="cbs-h3b">Earlier sessions</h3><ul id="cbsSess" class="cbs-grants"></ul><button id="cbsSessClear" class="cbs-alloff">Delete all sessions</button>' +
           '<p class="cbs-hint">Kinds of request you pressed "Always allow" for. Turn any of them off here. Dangerous ones (terminal, PowerShell, delete) are never in this list.</p></aside>' +
       '</div></div>';
 
@@ -142,7 +146,6 @@ export function mountCodebase(root, deps = {}) {
     $('#cbsAlways').innerHTML = t.length ? t.map(x => '<li><span class="cbs-gd">' + esc(x) + '</span><span class="cbs-gm">always allowed</span><button data-off="' + esc(x) + '" aria-label="Turn off always allow for ' + esc(x) + '">Turn off</button></li>').join('') : '<li class="cbs-empty">None. Every request asks you first.</li>';
   }
   $('#cbsAlwaysOff').onclick = async () => { const r = await json('/api/codebase/always', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: '{}' }); paintAlways(r.j.tools); };
-  $('#cbsAlwaysOff').onclick = async () => { const r = await json('/api/codebase/always', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: '{}' }); paintAlways(r.j.tools); };
   $('#cbsAlways').addEventListener('click', async ev => {
     const b = ev.target && ev.target.closest && ev.target.closest('button[data-off]'); if (!b) return;
     const r = await json('/api/codebase/always', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tool: b.dataset.off }) });
@@ -160,10 +163,27 @@ export function mountCodebase(root, deps = {}) {
     paintGrants(r.j.grants);
   });
 
+  // Memory and earlier sessions: look, add, delete.
+  const H = { 'Content-Type': 'application/json' };
+  async function paintMem(list) {
+    const l = list || (await json('/api/codebase/memory')).j.memory || [];
+    $('#cbsMem').innerHTML = l.length ? l.map(m => '<li><span class="cbs-gd">' + esc(m.text) + '</span><button data-forget="' + esc(m.id) + '" title="Delete this memory">Delete</button></li>').join('') : '<li class="cbs-gm">Nothing remembered yet.</li>';
+  }
+  async function paintSess(list) {
+    const l = list || (await json('/api/codebase/sessions')).j.sessions || [];
+    $('#cbsSess').innerHTML = l.length ? l.map(x => '<li><span class="cbs-gd">' + (x.ok ? '\u2705 ' : '\u274C ') + esc(x.task) + '</span><span class="cbs-gm">' + esc(String(x.at || '').slice(0, 10)) + '</span><button data-sess="' + esc(x.id) + '" title="Delete this session">Delete</button></li>').join('') : '<li class="cbs-gm">No sessions yet.</li>';
+  }
+  $('#cbsMemAdd').onclick = async () => { const t = $('#cbsMemText').value.trim(); if (!t) return; const r = await json('/api/codebase/memory', { method: 'POST', headers: H, body: JSON.stringify({ text: t }) }); if (r.ok) { $('#cbsMemText').value = ''; paintMem(r.j.memory); } else say(r.j.error || 'Could not save that.', true); };
+  $('#cbsMem').addEventListener('click', async ev => { const b = ev.target.closest && ev.target.closest('button[data-forget]'); if (!b) return; const r = await json('/api/codebase/memory', { method: 'DELETE', headers: H, body: JSON.stringify({ id: b.dataset.forget }) }); paintMem(r.ok ? r.j.memory : undefined); });
+  $('#cbsSess').addEventListener('click', async ev => { const b = ev.target.closest && ev.target.closest('button[data-sess]'); if (!b) return; const r = await json('/api/codebase/sessions', { method: 'DELETE', headers: H, body: JSON.stringify({ id: b.dataset.sess }) }); paintSess(r.ok ? r.j.sessions : undefined); });
+  $('#cbsSessClear').onclick = async () => { const r = await json('/api/codebase/sessions', { method: 'DELETE', headers: H, body: JSON.stringify({ all: true }) }); paintSess(r.ok ? r.j.sessions : undefined); };
+
   // Opening the screen: show the folders and usage, and pick up a run that is already going (the page was reloaded).
   async function open() {
     paintGrants();
     paintAlways();
+    paintMem();
+    paintSess();
     paintUsage();
     const s = await json('/api/codebase/state');
     if (s.ok && s.j.running) { runId = s.j.id || ''; busy(true); say('Working...'); feed.innerHTML = ''; watch(); }

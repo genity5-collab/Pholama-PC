@@ -128,19 +128,19 @@ function rig(script, o = {}) {
   }
   // time limit: a clock we control
   const clockRig = (script, startMs, tickMs) => { const r2 = rig(script); let t = startMs; r2.deps.now = () => (t += tickMs); return r2; };
-  r = clockRig(Array.from({ length: 50 }, () => tool({ name: 'cloud_browse' })), 0, 60000);   // each call takes a minute
+  r = clockRig(Array.from({ length: 50 }, (_, i) => tool({ name: 'cloud_browse', url: 'https://x.test/' + i })), 0, 60000);   // each call takes a minute
   out = await L.run('slow', { ...r.deps, maxMinutes: 5 });
   ok('a run that is too slow stops at its time limit', out.ok === false && out.stopped === 'time');
   ok('the time stop is explained and says work is saved', r.events.some(e => e.kind === 'stopped' && e.reason === 'time' && /saved/.test(e.say) && /5 minutes/.test(e.say)));
   ok('it did real work before stopping (not zero steps)', out.steps >= 1 && out.steps < 50);
   r = clockRig([tool({ name: 'done', summary: 's' })], 0, 1000);
   out = await L.run('quick', { ...r.deps, maxMinutes: 5 }); ok('a quick run is not affected by the limit', out.ok === true);
-  r = clockRig(Array.from({ length: 400 }, () => tool({ name: 'cloud_browse' })), 0, 60000);
+  r = clockRig(Array.from({ length: 400 }, (_, i) => tool({ name: 'cloud_browse', url: 'https://x.test/' + i })), 0, 60000);
   out = await L.run('x', { ...r.deps, maxMinutes: 100000 });
   ok('nobody can set the limit above the 4 hour hard maximum', out.stopped === 'time' && /240 minutes/.test(r.events.find(e => e.kind === 'stopped').say) && L.HARD_MAX_MINUTES === 240);
   for (const bad of [0, -5, NaN, 'abc', null, undefined, {}]) { r = clockRig([tool({ name: 'done', summary: 's' })], 0, 1000); out = await L.run('x', { ...r.deps, maxMinutes: bad }); ok('a junk time limit falls back to the default: ' + JSON.stringify(bad), out.ok === true); }
   {
-    let clock = 0; r = rig(Array.from({ length: 400 }, () => tool({ name: 'cloud_browse' }))); r.deps.now = () => (clock += 60000);
+    let clock = 0; r = rig(Array.from({ length: 400 }, (_, i) => tool({ name: 'cloud_browse', url: 'https://x.test/' + i }))); r.deps.now = () => (clock += 60000);
     out = await L.run('x', r.deps);
     const stopEvent = r.events.find(e => e.kind === 'stopped');
     ok('the default time limit is 45 minutes', out.stopped === 'time' && /45 minutes/.test(stopEvent.say) && L.DEFAULT_MAX_MINUTES === 45);
@@ -149,7 +149,7 @@ function rig(script, o = {}) {
   // the budget and the stuck detector still end a runaway
   r = rig(Array.from({ length: 10 }, () => tool({ name: 'nonexistent_tool' }))); out = await L.run('x', r.deps);
   ok('a model that keeps calling a missing tool is stopped as stuck', out.stopped === 'stuck');
-  r = rig(Array.from({ length: 50 }, () => tool({ name: 'cloud_browse' })), { noBudget: true }); out = await L.run('x', r.deps);
+  r = rig(Array.from({ length: 50 }, (_, i) => tool({ name: 'cloud_browse', url: 'https://x.test/' + i })), { noBudget: true }); out = await L.run('x', r.deps);
   ok('no credits stops the run before any model call', out.stopped === 'budget' && r.calls() === 0);
 
   // 14b. compaction keeps the context small and keeps the agent's notes
@@ -167,7 +167,7 @@ function rig(script, o = {}) {
   ok('compaction with no notes still works', L.compact(base, []).some(m => /no notes yet/.test(m.content)));
   ok('only the last 12 notes are carried', L.compact(base, Array.from({ length: 30 }, (_, i) => 'note' + i)).some(m => /note29/.test(m.content) && !/note0\b/.test(m.content)));
   {
-    const seen = []; r = rig([tool({ name: 'note_', text: 'first plan' }), ...Array.from({ length: 30 }, () => tool({ name: 'cloud_browse' })), tool({ name: 'done', summary: 'ok' })]);
+    const seen = []; r = rig([tool({ name: 'note_', text: 'first plan' }), ...Array.from({ length: 30 }, (_, i) => tool({ name: 'cloud_browse', url: 'https://x.test/' + i })), tool({ name: 'done', summary: 'ok' })]);
     r.deps.tools.cloud_browse = async () => 'y'.repeat(5000); const origModel = r.deps.model; r.deps.model = async m => { seen.push(JSON.stringify(m).length); return origModel(m); };
     out = await L.run('long', { ...r.deps, maxMinutes: 240 });
     ok('a long run finishes', out.ok === true);
@@ -229,6 +229,30 @@ function rig(script, o = {}) {
   { const r5 = rig([tool({ name: 'note_', text: 'a' }), 'no tool', 'no tool', 'no tool', tool({ name: 'note_', text: 'b' }), 'no tool', 'no tool', 'no tool', tool({ name: 'done', summary: 'ok' })]);
     const o5 = await L.run('x', r5.deps); ok('misses are counted in a row, not in total', o5.ok === true); }
 
-  console.log(`\n${fail ? 'FAILURES: ' + fail : 'ALL PASSED'} (${pass} checks)`);
+  
+  // ---- repeating itself: the same call with the same result, again and again ----
+  {
+    const seenMsgs = []; r = rig(Array.from({ length: 20 }, () => tool({ name: 'screenshot_' })));
+    const om = r.deps.model; r.deps.model = async m => { seenMsgs.push(m[m.length - 1].content); return om(m); };
+    out = await L.run('look', r.deps);
+    ok('the same call with the same result over and over stops the run', out.ok === false && out.stopped === 'stuck', JSON.stringify(out));
+    ok('and it stops on the 6th identical try, not later', out.steps === 6, out.steps);
+    ok('the person is told in plain words', r.events.some(e => e.kind === 'stopped' && /kept repeating/.test(e.say)));
+    ok('on the 3rd identical try the model is told it is repeating itself', seenMsgs.some(c => /REPEATING YOURSELF/.test(c)) && !/REPEATING YOURSELF/.test(seenMsgs[2] || ''), seenMsgs.map(c => c.slice(0, 20)).join('|'));
+    ok('the nudge says what to do instead', seenMsgs.some(c => /NEXT step/.test(c) && /done/.test(c)));
+  }
+  {
+    r = rig([tool({ name: 'screenshot_' }), tool({ name: 'screenshot_' }), tool({ name: 'cloud_browse', url: 'https://a.test' }), tool({ name: 'screenshot_' }), tool({ name: 'screenshot_' }), tool({ name: 'cloud_browse', url: 'https://b.test' }), tool({ name: 'done', summary: 'ok' })]);
+    out = await L.run('look', r.deps); ok('doing the same thing a couple of times with other steps in between is fine', out.ok === true, JSON.stringify(out));
+  }
+  {
+    let n = 0; r = rig(Array.from({ length: 12 }, () => tool({ name: 'screenshot_' }))); r.deps.tools.screenshot_ = async () => 'screen ' + (++n);
+    out = await L.run('watch', { ...r.deps, tools: r.deps.tools }); ok('the same call is fine when the RESULT keeps changing (the page is moving on)', out.stopped !== 'stuck', JSON.stringify(out));
+  }
+  {
+    r = rig([tool({ name: 'cloud_browse', url: 'https://a.test' }), tool({ name: 'cloud_browse', url: 'https://a.test' }), tool({ name: 'cloud_browse', url: 'https://b.test' }), tool({ name: 'cloud_browse', url: 'https://a.test' }), tool({ name: 'done', summary: 'ok' })]);
+    out = await L.run('x', r.deps); ok('same tool with different arguments is not a repeat', out.ok === true);
+  }
+console.log(`\n${fail ? 'FAILURES: ' + fail : 'ALL PASSED'} (${pass} checks)`);
   process.exit(fail ? 1 : 0);
 })();
