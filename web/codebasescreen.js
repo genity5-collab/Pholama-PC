@@ -18,7 +18,7 @@ export function describe(e) {
       return { tone: bad ? 'bad' : 'ok', tag: 'TOOL', text: tool + (e.args ? ' ' + clip(e.args, 220) : ''), result: clip(e.result, 500), cost: e.cost || 0 };
     }
     case 'ask': return { tone: 'ask', tag: 'ASK', text: tool + ' is waiting for you', callId: e.callId, strict: e.level === 'strict', args: clip(e.args, 400), tool };
-    case 'answered': return { tone: 'info', tag: 'YOU', text: e.allowed === false ? 'You said No' : 'You said Yes' };
+    case 'answered': return { tone: 'info', tag: 'YOU', text: e.allowed === false ? 'You said No' : (e.auto ? 'Allowed automatically (Always allow is on)' : 'You said Yes') };
     case 'expired': return { tone: 'warn', tag: 'TIME', text: 'No answer in time, so it was not done' };
     case 'refused': return { tone: 'bad', tag: 'BLOCKED', text: clip(e.say || e.reason, 240) || 'That was blocked' };
     case 'retry': return { tone: 'mute', tag: 'AGAIN', text: clip(e.say, 160) || 'Trying again' };
@@ -33,7 +33,7 @@ export function rowHtml(d) {
   if (!d) return '';
   const card = d.tone === 'ask'
     ? '<div class="cbs-ask' + (d.strict ? ' strict' : '') + '" data-call="' + esc(d.callId) + '"><b>' + esc(d.tool) + '</b> wants to run' + (d.strict ? ' <em>(asked every time)</em>' : '') + (d.args ? ':<pre>' + esc(d.args) + '</pre>' : '') +
-      '<div class="cbs-btns"><button class="cbs-allow" data-allow="1">Allow</button><button class="cbs-deny" data-allow="0">Deny</button></div></div>'
+      '<div class="cbs-btns"><button class="cbs-allow" data-allow="1">Allow</button>' + (d.strict ? '' : '<button class="cbs-always" data-always="' + esc(d.tool) + '" title="Allow this kind of request from now on. You can turn it off in the list on the right.">Always allow ' + esc(d.tool) + '</button>') + '<button class="cbs-deny" data-allow="0">Deny</button></div></div>'
     : '';
   return '<li class="cbs-row ' + esc(d.tone) + '"><span class="cbs-tag">' + esc(d.tag) + '</span><span class="cbs-txt">' + esc(d.text) + '</span>' +
     (d.cost ? '<span class="cbs-cost">' + esc(d.cost) + ' credits</span>' : '') + (d.result ? '<div class="cbs-res">' + esc(d.result) + '</div>' : '') +
@@ -63,7 +63,9 @@ export function mountCodebase(root, deps = {}) {
         '</section>' +
         '<aside class="cbs-side"><h3>Folders it may use</h3><ul id="cbsGrants" class="cbs-grants"></ul>' +
           '<div class="cbs-add"><input id="cbsDir" type="text" placeholder="C:\\Users\\you\\my-project" aria-label="Folder path"><select id="cbsMode" aria-label="Access"><option value="read">Read only</option><option value="write">Read and change</option></select><button id="cbsGrant">Allow</button></div>' +
-          '<p class="cbs-hint">It can only touch folders listed here. Deleting and installing are always asked about, every time.</p></aside>' +
+          '<p class="cbs-hint">It can only touch folders listed here. Deleting and installing are always asked about, every time.</p>' +
+          '<h3 class="cbs-h3b">Always allowed</h3><ul id="cbsAlways" class="cbs-grants"></ul>' +
+          '<p class="cbs-hint">Kinds of request you pressed "Always allow" for. Turn any of them off here. Dangerous ones (terminal, PowerShell, delete) are never in this list.</p></aside>' +
       '</div></div>';
 
   const paintUsage = () => { try { const u = typeof window !== 'undefined' && window.PholamaCodebaseUsage; if (u) u.paint(); } catch {} };   // the usage bar is optional
@@ -109,10 +111,14 @@ export function mountCodebase(root, deps = {}) {
 
   // Allow / Deny: one delegated handler, so cards added later work and cannot be double-clicked into two answers.
   feed.addEventListener('click', async ev => {
-    const b = ev.target && ev.target.closest && ev.target.closest('button[data-allow]'); if (!b) return;
+    const b = ev.target && ev.target.closest && ev.target.closest('button[data-allow], button[data-always]'); if (!b) return;
     const card = b.closest('.cbs-ask'); if (!card || card.dataset.sent === '1') return; card.dataset.sent = '1';
     for (const x of card.querySelectorAll('button')) x.disabled = true;
-    const r = await json('/api/codebase/answer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ run: runId, call: card.dataset.call, allow: b.dataset.allow === '1' }) });
+    if (b.dataset.always) {   // switch the kind on first, then say Yes to this one
+      const a = await json('/api/codebase/always', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tool: b.dataset.always }) });
+      if (a.ok) paintAlways(a.j.tools); else say(a.j.error || 'That cannot be always allowed.', true);
+    }
+    const r = await json('/api/codebase/answer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ run: runId, call: card.dataset.call, allow: b.dataset.allow === '1' || !!b.dataset.always }) });
     if (!r.ok) { card.dataset.sent = ''; for (const x of card.querySelectorAll('button')) x.disabled = false; say(r.j.error || 'That answer was not accepted.', true); }
   });
 
@@ -121,6 +127,15 @@ export function mountCodebase(root, deps = {}) {
     const ul = $('#cbsGrants');
     ul.innerHTML = g.length ? g.map(x => '<li><span class="cbs-gd">' + esc(x.dir) + '</span><span class="cbs-gm">' + (x.mode === 'write' ? 'read + change' : 'read only') + '</span><button data-revoke="' + esc(x.dir) + '" aria-label="Remove access">Remove</button></li>').join('') : '<li class="cbs-empty">No folders yet.</li>';
   }
+  async function paintAlways(list) {
+    const t = list || (await json('/api/codebase/always')).j.tools || [];
+    $('#cbsAlways').innerHTML = t.length ? t.map(x => '<li><span class="cbs-gd">' + esc(x) + '</span><span class="cbs-gm">always allowed</span><button data-off="' + esc(x) + '" aria-label="Turn off always allow for ' + esc(x) + '">Turn off</button></li>').join('') : '<li class="cbs-empty">None. Every request asks you first.</li>';
+  }
+  $('#cbsAlways').addEventListener('click', async ev => {
+    const b = ev.target && ev.target.closest && ev.target.closest('button[data-off]'); if (!b) return;
+    const r = await json('/api/codebase/always', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tool: b.dataset.off }) });
+    paintAlways(r.j.tools);
+  });
   $('#cbsGrant').onclick = async () => {
     const dir = $('#cbsDir').value.trim(); if (!dir) { say('Type a folder path first.', true); return; }
     const r = await json('/api/codebase/grants', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dir, mode: $('#cbsMode').value }) });
@@ -136,6 +151,7 @@ export function mountCodebase(root, deps = {}) {
   // Opening the screen: show the folders and usage, and pick up a run that is already going (the page was reloaded).
   async function open() {
     paintGrants();
+    paintAlways();
     paintUsage();
     const s = await json('/api/codebase/state');
     if (s.ok && s.j.running) { runId = s.j.id || ''; busy(true); say('Working...'); feed.innerHTML = ''; watch(); }

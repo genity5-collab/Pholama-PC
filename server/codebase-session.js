@@ -20,6 +20,8 @@ function create(deps) {
     const r = run = { ac, id: 'r' + (++counter) + '-' + now(), events: [], waiters: new Set(), pending: new Map(), done: false, result: null, stopped: false };
     const ask = req => new Promise(resolve => {
       if (r.stopped) return resolve({ allowed: false });
+      // A kind the person switched on "Always allow" for (never a strict one) is answered at once; it still shows in the feed.
+      try { if (req.level === 'ask' && require('./codebase-always').has(req.tool)) { push(r, { kind: 'answered', callId: String(req.callId), allowed: true, auto: true, at: now() }); return resolve({ allowed: true, callId: String(req.callId) }); } } catch {}
       const timer = setTimeout(() => { if (r.pending.delete(req.callId)) { push(r, { kind: 'expired', callId: req.callId, at: now() }); resolve({ allowed: false }); } }, askTimeout);
       if (timer.unref) timer.unref();
       r.pending.set(req.callId, { resolve, timer, tool: req.tool, level: req.level });

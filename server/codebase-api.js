@@ -70,7 +70,7 @@ function create(deps) {
     const method = req.method;
     try {
       // ---- reads ----
-      if (p === '/api/codebase/state' && method === 'GET') { send(res, 200, { ...session.state(), usage: budget.view(budget.load(now()), now()), grants: grants.list(), credits: state.credits }); return true; }
+      if (p === '/api/codebase/state' && method === 'GET') { send(res, 200, { ...session.state(), usage: budget.view(budget.load(now()), now()), grants: grants.list(), always: require('./codebase-always').list(), credits: state.credits }); return true; }
       if (p === '/api/codebase/stream' && method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive', ...(res.cors || {}) });
         const out = e => { try { res.write('data: ' + JSON.stringify(e) + '\n\n'); } catch {} };
@@ -88,6 +88,7 @@ function create(deps) {
         let tz = 'UTC'; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch {}
         send(res, 200, { ...budget.view(budget.load(now()), now()), now: now(), tz }); return true;
       }
+      if (p === '/api/codebase/always' && method === 'GET') { send(res, 200, { tools: require('./codebase-always').list() }); return true; }
       if (p === '/api/codebase/grants' && method === 'GET') { send(res, 200, { grants: grants.list() }); return true; }
 
       // ---- writes (every one reads a small, size-limited body) ----
@@ -112,6 +113,8 @@ function create(deps) {
         send(res, r.ok ? 200 : 409, r.ok ? { ok: true } : { error: r.error }); return true;
       }
       if (p === '/api/codebase/stop' && method === 'POST') { const r = session.stop(); state.token = ''; state.gh = ''; if (r.ok && notepad) notepad.finish().catch(() => {}); send(res, r.ok ? 200 : 409, r.ok ? { ok: true } : { error: r.error }); return true; }
+      if (p === '/api/codebase/always' && method === 'POST') { const r2 = require('./codebase-always').add(String(body.tool || '')); send(res, r2.ok ? 200 : 400, r2); return true; }
+      if (p === '/api/codebase/always' && method === 'DELETE') { const A = require('./codebase-always'); send(res, 200, body.tool ? A.remove(String(body.tool)) : A.clear()); return true; }
       if (p === '/api/codebase/grants' && method === 'POST') {
         try { const g = grants.grant(String(body.dir || ''), body.mode === 'write' ? 'write' : 'read'); send(res, 200, { ok: true, grant: g, grants: grants.list() }); }
         catch (e) { send(res, 400, { error: String(e && e.message || 'That folder cannot be used.').slice(0, 200) }); }

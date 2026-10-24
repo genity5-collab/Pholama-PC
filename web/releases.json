@@ -1,6 +1,16 @@
 {
- "latest": "0.9.48",
+ "latest": "0.9.49",
  "releases": [
+  {
+   "version": "0.9.49",
+   "date": "2026-10-24",
+   "title": "Codebase: Always allow, typing and searching fixed",
+   "notes": [
+    "New Always allow button on every permission card. It allows that kind of request from now on, and you can turn it off any time in the Always allowed list. Terminal, PowerShell and delete are never included and always ask.",
+    "The AI can now type properly (new lines become Enter) and press keys such as Enter, Tab and Ctrl+L.",
+    "The AI can now search the web: it opens the search results directly."
+   ]
+  },
   {
    "version": "0.9.48",
    "date": "2026-10-24",

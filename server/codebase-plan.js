@@ -97,12 +97,29 @@ const PLANNERS = {
   paste_text() { return { ok: true, kind: 'paste' }; },
   copy_paste_image(a) { if (a.action === 'copy') { const r = needPath(a, 'path', 'read'); return r.ok ? { ok: true, kind: 'img_copy', path: r.p } : r; } if (a.action === 'paste') return { ok: true, kind: 'paste' }; return no('action must be "copy" or "paste".'); },
   user_pc(a) {
-    const acts = ['move', 'click', 'type', 'scroll'];
-    if (!acts.includes(a.action)) return no('action must be one of: ' + acts.join(', ') + '.');
-    if (a.action === 'type') { if (!isStr(a.text) || a.text.length > 2000) return no('Give the text to type (up to 2,000 characters).'); return { ok: true, kind: 'pc_type', text: a.text }; }
+    const acts = ['move', 'click', 'type', 'key', 'scroll', 'search'];
+    const act = String(a.action || '').toLowerCase().trim();   // models write "Type", "typing", "press"
+    const alias = { typing: 'type', write: 'type', enter_text: 'type', press: 'key', press_key: 'key', keypress: 'key', hotkey: 'key', google: 'search', web_search: 'search', find: 'search', tap: 'click', mouse_click: 'click' };
+    const action = alias[act] || act;
+    if (!acts.includes(action)) return no('action must be one of: ' + acts.join(', ') + '.');
+    if (action === 'search') {   // opens a normal web search in the browser: the reliable way to search, no clicking needed
+      const q = String(a.text || a.query || a.q || '').trim();
+      if (!q || q.length > 300) return no('Give the words to search for (up to 300 characters) in "text".');
+      return { ok: true, kind: 'open', target: 'https://www.google.com/search?q=' + encodeURIComponent(q), web: true };
+    }
+    if (action === 'type') {
+      const txt = a.text == null ? a.value : a.text;
+      if (typeof txt !== 'string' || !txt.length || txt.length > 2000) return no('Give the text to type (up to 2,000 characters) in "text".');
+      return { ok: true, kind: 'pc_type', text: txt, enter: a.enter === true || a.submit === true };
+    }
+    if (action === 'key') {
+      const k = String(a.key || a.keys || a.text || '').toLowerCase().replace(/\s+/g, '').replace(/control/g, 'ctrl').replace(/return/g, 'enter').replace(/escape/g, 'esc');
+      if (!KEYS[k]) return no('key must be one of: ' + Object.keys(KEYS).join(', ') + '.');
+      return { ok: true, kind: 'pc_key', key: k, send: KEYS[k] };
+    }
     const x = Math.round(+a.x), y = Math.round(+a.y);
-    if (a.action !== 'scroll' && !(Number.isFinite(x) && Number.isFinite(y) && x >= 0 && y >= 0 && x <= 20000 && y <= 20000)) return no('x and y must be screen positions.');
-    return { ok: true, kind: 'pc_' + a.action, x: x || 0, y: y || 0, amount: Math.max(-20, Math.min(20, Math.round(+a.amount) || 0)) };
+    if (action !== 'scroll' && !(Number.isFinite(x) && Number.isFinite(y) && x >= 0 && y >= 0 && x <= 20000 && y <= 20000)) return no('x and y must be screen positions.');
+    return { ok: true, kind: 'pc_' + action, x: x || 0, y: y || 0, amount: Math.max(-20, Math.min(20, Math.round(+a.amount) || 0)) };
   },
   terminal_open(a) { return shell(a, 'terminal'); },
   windows_powershell(a) { return shell(a, 'powershell'); },
@@ -114,6 +131,9 @@ const PLANNERS = {
   github_read(a) { return require('./codebase-github').plan('github_read', a); },
   github_write(a) { return require('./codebase-github').plan('github_write', a); },
 };
+// The only keys the agent may press (SendKeys codes are fixed here, never taken from the model). Win+R / Alt+F4 / Ctrl+Alt+Del style keys are not in the list.
+const KEYS = { enter: '{ENTER}', tab: '{TAB}', esc: '{ESC}', backspace: '{BACKSPACE}', delete: '{DELETE}', up: '{UP}', down: '{DOWN}', left: '{LEFT}', right: '{RIGHT}', pagedown: '{PGDN}', pageup: '{PGUP}', home: '{HOME}', end: '{END}', space: ' ',
+  'ctrl+l': '^l', 'ctrl+f': '^f', 'ctrl+a': '^a', 'ctrl+c': '^c', 'ctrl+v': '^v', 'ctrl+t': '^t', 'ctrl+s': '^s', 'ctrl+z': '^z', 'ctrl+enter': '^{ENTER}', 'shift+tab': '+{TAB}', 'alt+left': '%{LEFT}' };
 // What each generator may save as. The extension is fixed per kind (never chosen by the model), so a generator can never write a script or program.
 const MAKE_EXT = { image: ['.png'], speech: ['.wav'], music: ['.wav', '.mp3'], '3d': ['.glb', '.obj'] };
 const MAKE_PROMPT_MAX = 1000;

@@ -4,7 +4,7 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; console.log('PASS ' + n); } else { fail++; console.log('FAIL ' + n); } };
 
 const EVIL = ['<img src=x onerror=alert(1)>', '<script>alert(1)</script>', '"><svg onload=alert(1)>', "' onmouseover='alert(1)", '`<b>x</b>`', '</li><li class="x">', '&lt;b&gt;', 'javascript:alert(1)', '<iframe src=//evil>', '\u202e<b>'];
-const OWN = /<\/?(li|span|div|b|pre|button|em)( (class|data-call|data-allow)="[^"<>]*")*>/g;
+const OWN = /<\/?(li|span|div|b|pre|button|em)( (class|data-call|data-allow|data-always|title)="[^"<>]*")*>/g;
 const live = html => html.replace(OWN, '').includes('<');
 
 // ---- describe: every event kind ----
@@ -33,7 +33,7 @@ for (const evil of EVIL) {
 // Real attribute NAMES only: walk each tag and skip quoted values, so escaped text that merely contains the word onclick= cannot fool the check.
 const attrNames = html => { const names = []; const tag = /<[a-z0-9]+((?:\s+[a-z-]+(?:="[^"]*")?)*)\s*>/gi; let m; while ((m = tag.exec(html))) { const re = /\s+([a-z-]+)(?:="[^"]*")?/gi; let a; while ((a = re.exec(m[1]))) names.push(a[1].toLowerCase()); } return names; };
 { const h = rowHtml(describe({ kind: 'ask', tool: 'x" onclick="y', callId: 'a" onmouseover="b', args: 'q' }));
-  ok('no event handler attribute can appear (real attribute names only)', attrNames(h).every(n => ['class', 'data-call', 'data-allow'].includes(n)));
+  ok('no event handler attribute can appear (real attribute names only)', attrNames(h).every(n => ['class', 'data-call', 'data-allow', 'data-always', 'title'].includes(n)));
   ok('the quotes in hostile text are escaped, so they cannot close an attribute', !/data-call="[^"]*"[^>]*onmouseover/.test(h) && h.includes('&quot;')); }
 ok('a hostile call id cannot break out of data-call', (() => { const h = rowHtml(describe({ kind: 'ask', tool: 'x', callId: '"><script>1</script>' })); return !h.includes('<script') && /data-call="&quot;&gt;/.test(h); })());
 ok('rowHtml of nothing is empty', rowHtml(null) === '' && rowHtml(undefined) === '');
@@ -50,7 +50,7 @@ ok('no result, no line', endLine(null) === '');
 // ---- a small fake page so the click handlers can be driven ----
 function fakePage() {
   const els = {}; const mk = (id, extra = {}) => (els[id] = { id, value: '', disabled: false, textContent: '', className: '', innerHTML: '', dataset: {}, children: [], listeners: {}, onclick: null, addEventListener(t, f) { this.listeners[t] = f; }, querySelector() { return null; }, querySelectorAll() { return []; }, insertAdjacentHTML(_, h) { this.innerHTML += h; this.children.push({}); }, removeChild() { this.children.shift(); }, get firstChild() { return this.children[0]; }, get lastElementChild() { return null; }, ...extra });
-  ['#cbsTask', '#cbsKind', '#cbsStart', '#cbsStop', '#cbsMsg', '#cbsFeed', '#cbsGrants', '#cbsDir', '#cbsMode', '#cbsGrant'].forEach(k => mk(k));
+  ['#cbsTask', '#cbsKind', '#cbsStart', '#cbsStop', '#cbsMsg', '#cbsFeed', '#cbsGrants', '#cbsDir', '#cbsMode', '#cbsGrant', '#cbsAlways'].forEach(k => mk(k));
   els['#cbsKind'].value = 'simple'; els['#cbsMode'].value = 'read';
   const root = { innerHTML: '', querySelector: s => els[s] || null };
   return { root, els };

@@ -56,7 +56,9 @@ $p=New-Object PhWin+POINT; $p.X=$x; $p.Y=$y; [void][PhWin]::ScreenToClient($h,[r
 $l=[IntPtr](($p.Y -shl 16) -bor ($p.X -band 0xFFFF))
 [void][PhWin]::PostMessage($h,0x0201,[IntPtr]1,$l); [void][PhWin]::PostMessage($h,0x0202,[IntPtr]::Zero,$l)
 Write-Output "clicked at $x,$y (the app may ignore background clicks)"`,
-  pc_type: `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait(([Console]::In.ReadToEnd() -replace '([+^%~(){}\\[\\]])','{$1}')); Write-Output "typed"`,
+  // Text is typed literally: every SendKeys special character is escaped, and a line break becomes the Enter key. PH_A=1 presses Enter at the end.
+  pc_type: `Add-Type -AssemblyName System.Windows.Forms; $t=[Console]::In.ReadToEnd() -replace "\r\n","\n"; $t=$t -replace '([+^%~(){}\\[\\]])','{$1}'; $t=$t -replace "\n","{ENTER}"; if($env:PH_A -eq '1'){$t=$t+'{ENTER}'}; [System.Windows.Forms.SendKeys]::SendWait($t); Write-Output "typed"`,
+  pc_key: `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait($env:PH_A); Write-Output "pressed"`,
 };
 
 // Run one fixed script. Data goes in via env vars and stdin only.
@@ -120,7 +122,8 @@ async function execute(pl, ctx = {}) {
     case 'paste': return ps('paste');
     case 'img_copy': return ps('img_copy', { a: pl.path });
     case 'pc_click': return ps('pc_click', { a: pl.x, b: pl.y });
-    case 'pc_type': return ps('pc_type', { stdin: pl.text });
+    case 'pc_type': return ps('pc_type', { stdin: pl.text, a: pl.enter ? '1' : '0' });
+    case 'pc_key': return ps('pc_key', { a: pl.send });
     case 'terminal': case 'powershell': return shell(pl.kind, pl.command, pl.cwd);
     default: return { ok: false, text: 'This action is not available on this PC yet.' };
   }

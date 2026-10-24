@@ -40,6 +40,10 @@ EXAMPLES (copy the shape exactly; one line, double quotes):
 <tool>{"name":"edit_file","path":"C:\\folder\\a.js","content":"whole new file text"}</tool>
 <tool>{"name":"create_item","path":"C:\\folder\\new.txt","content":"text"}</tool>
 <tool>{"name":"user_pc","action":"click","x":400,"y":300}</tool>
+<tool>{"name":"user_pc","action":"search","text":"best pizza near me"}</tool>
+<tool>{"name":"user_pc","action":"type","text":"hello world"}</tool>
+<tool>{"name":"user_pc","action":"key","key":"enter"}</tool>
+To SEARCH the web use action "search" (it opens the results). To type into a page: click the box, then action "type", then action "key" with "enter". Keys: enter, tab, esc, backspace, delete, up, down, left, right, space, ctrl+l, ctrl+f, ctrl+a, ctrl+c, ctrl+v.
 <tool>{"name":"cloud_browse","url":"https://example.com"}</tool>
 <tool>{"name":"done","summary":"what you did"}</tool>
 To open a website for the user use pc_browse with a full https address. Never answer with plain text, always one <tool> line.
