@@ -1,6 +1,16 @@
 {
- "latest": "0.9.49",
+ "latest": "0.9.50",
  "releases": [
+  {
+   "version": "0.9.50",
+   "date": "2026-10-24",
+   "title": "Codebase: no more sudden STOP, real mouse clicks, more controls",
+   "notes": [
+    "A slow or failed AI reply no longer ends the job. It is retried up to 3 times, with a smaller request on the later tries, and a real reason is shown if it still fails (sign in, credits, connection).",
+    "Clicking now uses a real mouse, so it works in Chrome and other browsers. Move, scroll, double-click, right-click and wait now work too.",
+    "More keys (F5, Ctrl+R, Ctrl+W...). New controls: choose how long a job may run (15 min to 4 hours), Clear the list, and Turn off all Always allow."
+   ]
+  },
   {
    "version": "0.9.49",
    "date": "2026-10-24",

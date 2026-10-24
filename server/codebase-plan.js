@@ -97,9 +97,9 @@ const PLANNERS = {
   paste_text() { return { ok: true, kind: 'paste' }; },
   copy_paste_image(a) { if (a.action === 'copy') { const r = needPath(a, 'path', 'read'); return r.ok ? { ok: true, kind: 'img_copy', path: r.p } : r; } if (a.action === 'paste') return { ok: true, kind: 'paste' }; return no('action must be "copy" or "paste".'); },
   user_pc(a) {
-    const acts = ['move', 'click', 'type', 'key', 'scroll', 'search'];
-    const act = String(a.action || '').toLowerCase().trim();   // models write "Type", "typing", "press"
-    const alias = { typing: 'type', write: 'type', enter_text: 'type', press: 'key', press_key: 'key', keypress: 'key', hotkey: 'key', google: 'search', web_search: 'search', find: 'search', tap: 'click', mouse_click: 'click' };
+    const acts = ['move', 'click', 'double_click', 'right_click', 'type', 'key', 'scroll', 'search', 'wait'];
+    const act = String(a.action || '').toLowerCase().trim().replace(/[\s-]+/g, '_');   // models write "Type", "typing", "press"
+    const alias = { typing: 'type', write: 'type', enter_text: 'type', press: 'key', press_key: 'key', keypress: 'key', hotkey: 'key', google: 'search', web_search: 'search', find: 'search', tap: 'click', mouse_click: 'click', doubleclick: 'double_click', double: 'double_click', rightclick: 'right_click', right: 'right_click', context: 'right_click', sleep: 'wait', pause: 'wait', hover: 'move' };
     const action = alias[act] || act;
     if (!acts.includes(action)) return no('action must be one of: ' + acts.join(', ') + '.');
     if (action === 'search') {   // opens a normal web search in the browser: the reliable way to search, no clicking needed
@@ -117,9 +117,13 @@ const PLANNERS = {
       if (!KEYS[k]) return no('key must be one of: ' + Object.keys(KEYS).join(', ') + '.');
       return { ok: true, kind: 'pc_key', key: k, send: KEYS[k] };
     }
+    if (action === 'wait') { const sec = Math.round(+(a.seconds == null ? a.amount : a.seconds)); if (!(sec >= 1 && sec <= 20)) return no('seconds must be from 1 to 20.'); return { ok: true, kind: 'pc_wait', seconds: sec }; }
     const x = Math.round(+a.x), y = Math.round(+a.y);
     if (action !== 'scroll' && !(Number.isFinite(x) && Number.isFinite(y) && x >= 0 && y >= 0 && x <= 20000 && y <= 20000)) return no('x and y must be screen positions.');
-    return { ok: true, kind: 'pc_' + action, x: x || 0, y: y || 0, amount: Math.max(-20, Math.min(20, Math.round(+a.amount) || 0)) };
+    // scroll: amount is in notches, positive = up, negative = down. With no x,y it scrolls where the cursor already is (the plan gives -1,-1 and the runner skips the move).
+    const kinds = { move: 'pc_move', click: 'pc_click', double_click: 'pc_double', right_click: 'pc_right', scroll: 'pc_scroll' };
+    const here = action === 'scroll' && !(Number.isFinite(x) && Number.isFinite(y));   // no spot given: scroll wherever the cursor is
+    return { ok: true, kind: kinds[action], x: here ? -1 : x, y: here ? -1 : y, amount: Math.max(-20, Math.min(20, Math.round(+a.amount) || 0)) };
   },
   terminal_open(a) { return shell(a, 'terminal'); },
   windows_powershell(a) { return shell(a, 'powershell'); },
@@ -133,7 +137,8 @@ const PLANNERS = {
 };
 // The only keys the agent may press (SendKeys codes are fixed here, never taken from the model). Win+R / Alt+F4 / Ctrl+Alt+Del style keys are not in the list.
 const KEYS = { enter: '{ENTER}', tab: '{TAB}', esc: '{ESC}', backspace: '{BACKSPACE}', delete: '{DELETE}', up: '{UP}', down: '{DOWN}', left: '{LEFT}', right: '{RIGHT}', pagedown: '{PGDN}', pageup: '{PGUP}', home: '{HOME}', end: '{END}', space: ' ',
-  'ctrl+l': '^l', 'ctrl+f': '^f', 'ctrl+a': '^a', 'ctrl+c': '^c', 'ctrl+v': '^v', 'ctrl+t': '^t', 'ctrl+s': '^s', 'ctrl+z': '^z', 'ctrl+enter': '^{ENTER}', 'shift+tab': '+{TAB}', 'alt+left': '%{LEFT}' };
+  'ctrl+l': '^l', 'ctrl+f': '^f', 'ctrl+a': '^a', 'ctrl+c': '^c', 'ctrl+v': '^v', 'ctrl+t': '^t', 'ctrl+s': '^s', 'ctrl+z': '^z', 'ctrl+enter': '^{ENTER}', 'shift+tab': '+{TAB}', 'alt+left': '%{LEFT}', 'alt+right': '%{RIGHT}',
+  f5: '{F5}', 'ctrl+r': '^r', 'ctrl+n': '^n', 'ctrl+w': '^w', 'ctrl+d': '^d', 'ctrl+x': '^x', 'ctrl+y': '^y', 'ctrl+home': '^{HOME}', 'ctrl+end': '^{END}', 'ctrl+shift+t': '^+t', 'ctrl+tab': '^{TAB}', f11: '{F11}', 'ctrl+plus': '^{ADD}', 'ctrl+minus': '^{SUBTRACT}', 'ctrl+0': '^0' };
 // What each generator may save as. The extension is fixed per kind (never chosen by the model), so a generator can never write a script or program.
 const MAKE_EXT = { image: ['.png'], speech: ['.wav'], music: ['.wav', '.mp3'], '3d': ['.glb', '.obj'] };
 const MAKE_PROMPT_MAX = 1000;

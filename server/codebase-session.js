@@ -5,13 +5,13 @@ const loop = require('./codebase-loop');
 const MAX_EVENTS = 500, ASK_TIMEOUT_MS = 10 * 60 * 1000;
 
 function create(deps) {
-  const { model, tools, budget, now = Date.now, askTimeout = ASK_TIMEOUT_MS } = deps;
+  const { model, tools, budget, now = Date.now, askTimeout = ASK_TIMEOUT_MS, sleep } = deps;
   let run = null;   // { id, events[], waiters:Set, pending:Map(callId -> {resolve,timer,tool,level}), done, result, stop }
   let counter = 0;
 
   const push = (r, e) => { r.events.push(e); if (r.events.length > MAX_EVENTS) r.events.shift(); for (const w of r.waiters) { try { w(e); } catch {} } };
 
-  function start(task) {
+  function start(task, opts = {}) {
     if (run && !run.done) return { ok: false, error: 'A Codebase run is already going. Stop it first.' };
     const text = String(task || '').trim();
     if (!text) return { ok: false, error: 'Tell the agent what to do.' };
@@ -28,7 +28,7 @@ function create(deps) {
     });
     const emit = e => push(r, e);
     const guardedBudget = { gate: () => (r.stopped ? { ok: false, say: 'Stopped.' } : budget.gate()), spend: n => budget.spend(n) };
-    loop.run(text, { model, tools, ask, budget: guardedBudget, emit, now, signal: ac.signal }).then(res => { r.result = res; }, () => { r.result = { ok: false, stopped: 'error' }; }).then(() => {
+    loop.run(text, { model, tools, ask, budget: guardedBudget, emit, now, signal: ac.signal, sleep, maxMinutes: Number(opts && opts.maxMinutes) || undefined }).then(res => { r.result = res; }, () => { r.result = { ok: false, stopped: 'error' }; }).then(() => {
       r.done = true; for (const p of r.pending.values()) { clearTimeout(p.timer); p.resolve({ allowed: false }); } r.pending.clear();
       push(r, { kind: 'end', at: now(), ok: !!(r.result && r.result.ok) });
     });

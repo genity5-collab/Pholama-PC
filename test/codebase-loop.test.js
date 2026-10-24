@@ -14,7 +14,7 @@ function rig(script, o = {}) {
     tools: Object.fromEntries(['note_', 'screenshot_', 'edit_file', 'terminal_open', 'delete_folder_or_window_or_app', 'make_image', 'github_write', 'cloud_browse', 'next_task'].map(n => [n, async a => { ran.push(n); if (o.throwIn === n) throw new Error('disk full ' + 'ghp_' + 'z'.repeat(30)); return (o.out && o.out[n]) || 'ok ' + n; }])),
     ask: async r => { asked.push(r); return o.allow === false ? { allowed: false } : { allowed: true, callId: r.callId }; },
     budget: { gate: () => ({ ok: !(o.noBudget) }), spend: n => { (o.spent = o.spent || []).push(n); return { ok: true }; } },
-    emit: e => events.push(e), now: (() => { let t = 1000; return () => ++t; })(),
+    sleep: async () => {}, emit: e => events.push(e), now: (() => { let t = 1000; return () => ++t; })(),
   };
   return { deps, events, ran, asked, calls: () => i };
 }

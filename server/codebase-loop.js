@@ -11,6 +11,7 @@ const T = require('./codebase-tools');
 const MAX_STEPS = 100000;        // not a real limit: a run ends by credits, the time limit, the stuck detector or the Stop button
 const DEFAULT_MAX_MINUTES = 45;  // a long build may run this long; the user can raise it for a run
 const HARD_MAX_MINUTES = 240;    // nobody can set it higher than 4 hours
+const RETRY_WAITS = [1000, 3000, 8000];   // pauses before the 2nd, 3rd and 4th try of one model call
 const KEEP_RECENT = 14;          // newest messages kept word for word when the history is compacted
 const COMPACT_AT_CHARS = 36000;  // about 9k tokens: compact before the model's window fills up
 const MAX_RESULT = 6000;         // characters of a tool result given back to the model
@@ -43,17 +44,19 @@ EXAMPLES (copy the shape exactly; one line, double quotes):
 <tool>{"name":"user_pc","action":"search","text":"best pizza near me"}</tool>
 <tool>{"name":"user_pc","action":"type","text":"hello world"}</tool>
 <tool>{"name":"user_pc","action":"key","key":"enter"}</tool>
-To SEARCH the web use action "search" (it opens the results). To type into a page: click the box, then action "type", then action "key" with "enter". Keys: enter, tab, esc, backspace, delete, up, down, left, right, space, ctrl+l, ctrl+f, ctrl+a, ctrl+c, ctrl+v.
+To SEARCH the web use action "search" (it opens the results). To type into a page: click the box, then action "type", then action "key" with "enter". Keys: enter, tab, esc, backspace, delete, up, down, left, right, space, f5, ctrl+l, ctrl+f, ctrl+a, ctrl+c, ctrl+v, ctrl+r, ctrl+t, ctrl+w, alt+left.
+More user_pc actions: "double_click" and "right_click" (with x,y), "move" (x,y), "scroll" (amount: negative = down, up to 20), and "wait" (seconds 1 to 20, so a page can load). Take a screenshot after a click or wait to check it worked.
 <tool>{"name":"cloud_browse","url":"https://example.com"}</tool>
 <tool>{"name":"done","summary":"what you did"}</tool>
 To open a website for the user use pc_browse with a full https address. Never answer with plain text, always one <tool> line.
 TOOLS: ` + T.list().map(t => t.name).join(', ') + ', done';
 
 // Keeps the system prompt, the task, a running summary and the newest messages. The notes the agent wrote are never dropped: they are its memory.
-function compact(msgs, notes) {
+function compact(msgs, notes, attempt = 0) {
   const size = m => m.reduce((n, x) => n + String(x.content).length, 0);
-  if (size(msgs) <= COMPACT_AT_CHARS || msgs.length <= KEEP_RECENT + 3) return msgs;
-  const head = msgs.slice(0, 2), tail = msgs.slice(-KEEP_RECENT), dropped = msgs.length - head.length - tail.length;
+  const keep = attempt >= 2 ? 5 : attempt === 1 ? 8 : KEEP_RECENT, limit = attempt >= 1 ? Math.floor(COMPACT_AT_CHARS / 2) : COMPACT_AT_CHARS;   // a failing call may be a too-big prompt: shrink on the retries
+  if (size(msgs) <= limit || msgs.length <= keep + 3) return msgs;
+  const head = msgs.slice(0, 2), tail = msgs.slice(-keep), dropped = msgs.length - head.length - tail.length;
   const memo = 'EARLIER WORK (' + dropped + ' older messages were shortened to save space). Your notes so far:\n' + (notes.length ? notes.slice(-12).map((n, i) => '- ' + n).join('\n') : '(no notes yet)');
   return [...head, { role: 'user', content: memo }, ...tail];
 }
@@ -97,7 +100,28 @@ async function run(task, deps) {
     if (g && g.ok === false) { log('stopped', { reason: 'budget', say: g.say || 'Out of credits for now.' }); return { ok: false, stopped: 'budget', steps: step - 1, spent }; }
 
     let text;
-    try { msgs.splice(0, msgs.length, ...compact(msgs, notes)); text = await model(msgs, deps.signal); } catch (e) { log('stopped', { reason: 'model', say: 'The model could not answer. Try again in a moment.' }); return { ok: false, stopped: 'model', steps: step - 1, spent }; }   // no provider details to the user
+    {
+      // A model hiccup (busy server, dropped connection, empty reply) is retried a few times with a short wait, so one bad moment does not end a long job.
+      // Login, credits and Stop are NOT retried: they will not fix themselves in seconds. The person is told the real reason in plain words, never a provider or model name.
+      let err = null;
+      for (let attempt = 0; attempt <= RETRY_WAITS.length; attempt++) {
+        if (deps.signal && deps.signal.aborted) { log('stopped', { reason: 'stop', say: 'Stopped.' }); return { ok: false, stopped: 'stop', steps: step - 1, spent }; }
+        try { msgs.splice(0, msgs.length, ...compact(msgs, notes, attempt)); text = await model(msgs, deps.signal); err = null; break; } catch (e) { err = e; }
+        const kind = err && err.plain ? err.kind : 'busy';
+        if (kind !== 'busy' && kind !== 'network') break;
+        if (attempt < RETRY_WAITS.length) {
+          log('retry', { step, say: 'The AI is slow right now. Trying again (' + (attempt + 1) + ' of ' + RETRY_WAITS.length + ')...' });
+          await (deps.sleep || (ms => new Promise(r => setTimeout(r, ms))))(RETRY_WAITS[attempt]);
+        }
+      }
+      if (err) {
+        const kind = err && err.plain ? err.kind : 'busy';
+        if (kind === 'stopped') { log('stopped', { reason: 'stop', say: 'Stopped.' }); return { ok: false, stopped: 'stop', steps: step - 1, spent }; }
+        const say = { login: 'Sign in to Pholama to continue.', limit: 'Not enough credits right now. They come back by themselves as the week moves on.', network: 'Could not reach the Pholama cloud. Check your connection, then press Start again.' }[kind] || 'The AI did not answer after a few tries. Press Start again in a moment.';
+        log('stopped', { reason: kind === 'login' ? 'login' : kind === 'limit' ? 'credits' : 'model', say });
+        return { ok: false, stopped: kind === 'login' ? 'login' : kind === 'limit' ? 'credits' : 'model', steps: step - 1, spent };
+      }
+    }
     const call = parse(text);
     if (!call) { if (++misses >= MAX_MISS) { log('stopped', { reason: 'stuck', say: 'The agent could not decide what to do. Try rewording the task.' }); return { ok: false, stopped: 'stuck', steps: step, spent }; } log('retry', { step, say: 'The model did not pick a tool; asking again.' }); msgs.push({ role: 'assistant', content: String(text || '').slice(0, 500) }, { role: 'user', content: 'Reply with exactly one tool line, nothing before or after it. Your last reply had no tool. Like this:\n<tool>{"name":"pc_browse","url":"https://www.youtube.com"}</tool>\nPick the tool that does the next step of the task. If the task is finished: <tool>{"name":"done","summary":"what you did"}</tool>' }); continue; }
     misses = 0;

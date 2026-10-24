@@ -45,17 +45,30 @@ if(Test-Path -LiteralPath $env:PH_A){ throw 'That file already exists.' }
   img_copy: `Add-Type -AssemblyName System.Windows.Forms,System.Drawing; [System.Windows.Forms.Clipboard]::SetImage([System.Drawing.Image]::FromFile($env:PH_A)); Write-Output "image copied"`,
   paste: `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^v'); Write-Output "pasted"`,
   // the agent's own small pointer: it sends the click to the window under that point; the user's real mouse is not moved.
-  pc_click: `
+  // A REAL mouse: the cursor moves to the spot and the button is pressed the way a hand would. (The old background message was ignored by browsers.)
+  // PH_A = x, PH_B = y, PH_N = what to do: move | click | double | right | scroll:<notches, negative = down>
+  pc_mouse: `
 Add-Type @"
 using System; using System.Runtime.InteropServices;
-public class PhWin { [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(int x,int y); [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h,uint m,IntPtr w,IntPtr l); [DllImport("user32.dll")] public static extern bool ScreenToClient(IntPtr h, ref POINT p); [StructLayout(LayoutKind.Sequential)] public struct POINT{public int X;public int Y;} }
+public class PhMouse { [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y); [DllImport("user32.dll")] public static extern void mouse_event(uint f,uint dx,uint dy,int d,UIntPtr e); }
 "@
-$x=[int]$env:PH_A; $y=[int]$env:PH_B
-$h=[PhWin]::WindowFromPoint($x,$y); if($h -eq [IntPtr]::Zero){ throw 'No window at that point.' }
-$p=New-Object PhWin+POINT; $p.X=$x; $p.Y=$y; [void][PhWin]::ScreenToClient($h,[ref]$p)
-$l=[IntPtr](($p.Y -shl 16) -bor ($p.X -band 0xFFFF))
-[void][PhWin]::PostMessage($h,0x0201,[IntPtr]1,$l); [void][PhWin]::PostMessage($h,0x0202,[IntPtr]::Zero,$l)
-Write-Output "clicked at $x,$y (the app may ignore background clicks)"`,
+$x=[int]$env:PH_A; $y=[int]$env:PH_B; $do=[string]$env:PH_N
+Add-Type -AssemblyName System.Windows.Forms
+$v=[System.Windows.Forms.SystemInformation]::VirtualScreen
+if($x -ge 0 -or $y -ge 0){
+  if($x -lt $v.Left -or $y -lt $v.Top -or $x -gt $v.Right -or $y -gt $v.Bottom){ throw 'That spot is not on the screen.' }
+  [void][PhMouse]::SetCursorPos($x,$y); Start-Sleep -Milliseconds 120
+}
+switch -Regex ($do){
+  '^move$'   { Write-Output "moved to $x,$y" }
+  '^click$'  { [PhMouse]::mouse_event(2,0,0,0,[UIntPtr]::Zero); [PhMouse]::mouse_event(4,0,0,0,[UIntPtr]::Zero); Write-Output "clicked at $x,$y" }
+  '^double$' { 1..2 | ForEach-Object { [PhMouse]::mouse_event(2,0,0,0,[UIntPtr]::Zero); [PhMouse]::mouse_event(4,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 60 }; Write-Output "double-clicked at $x,$y" }
+  '^right$'  { [PhMouse]::mouse_event(8,0,0,0,[UIntPtr]::Zero); [PhMouse]::mouse_event(16,0,0,0,[UIntPtr]::Zero); Write-Output "right-clicked at $x,$y" }
+  '^scroll:(-?\d+)$' { $n=[int]$Matches[1]; [PhMouse]::mouse_event(0x0800,0,0,($n*120),[UIntPtr]::Zero); Write-Output "scrolled $n" }
+  default    { throw 'Unknown mouse action.' }
+}`,
+  // Wait: a short pause so a page can load (the planner limits it to 1 to 20 seconds).
+  pc_wait: `Start-Sleep -Seconds ([int]$env:PH_A); Write-Output "waited $($env:PH_A) seconds"`,
   // Text is typed literally: every SendKeys special character is escaped, and a line break becomes the Enter key. PH_A=1 presses Enter at the end.
   pc_type: `Add-Type -AssemblyName System.Windows.Forms; $t=[Console]::In.ReadToEnd() -replace "\r\n","\n"; $t=$t -replace '([+^%~(){}\\[\\]])','{$1}'; $t=$t -replace "\n","{ENTER}"; if($env:PH_A -eq '1'){$t=$t+'{ENTER}'}; [System.Windows.Forms.SendKeys]::SendWait($t); Write-Output "typed"`,
   pc_key: `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait($env:PH_A); Write-Output "pressed"`,
@@ -121,7 +134,12 @@ async function execute(pl, ctx = {}) {
     case 'clip_set': return ps('clip_set', { stdin: pl.text });
     case 'paste': return ps('paste');
     case 'img_copy': return ps('img_copy', { a: pl.path });
-    case 'pc_click': return ps('pc_click', { a: pl.x, b: pl.y });
+    case 'pc_move': return ps('pc_mouse', { a: pl.x, b: pl.y, n: 'move' });
+    case 'pc_click': return ps('pc_mouse', { a: pl.x, b: pl.y, n: 'click' });
+    case 'pc_double': return ps('pc_mouse', { a: pl.x, b: pl.y, n: 'double' });
+    case 'pc_right': return ps('pc_mouse', { a: pl.x, b: pl.y, n: 'right' });
+    case 'pc_scroll': return ps('pc_mouse', { a: pl.x, b: pl.y, n: 'scroll:' + pl.amount });
+    case 'pc_wait': return ps('pc_wait', { a: pl.seconds });
     case 'pc_type': return ps('pc_type', { stdin: pl.text, a: pl.enter ? '1' : '0' });
     case 'pc_key': return ps('pc_key', { a: pl.send });
     case 'terminal': case 'powershell': return shell(pl.kind, pl.command, pl.cwd);

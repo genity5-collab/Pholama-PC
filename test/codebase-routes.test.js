@@ -17,7 +17,7 @@ function boot(o = {}) {
   const fetchFn = cloud || (async (url, o) => { cloudCalls.push(JSON.parse(o.body)); const reply = i < script.length ? script[i++] : tool({ name: 'done', summary: 'end' }); return { ok: true, status: 200, json: async () => ({ reply, credits_left: 1400, week_cap: 1500, cost: 5 }) }; });
   const winCalls = [], ghCalls = [];
   const api = API.create({
-    grants, budget, fetchFn, cloudUrl: 'http://cloud.test/x',
+    grants, budget, fetchFn, cloudUrl: 'http://cloud.test/x', sleep: async () => {},
     win: win || { execute: async pl => { const isNotes = (pl.path && /Pholama-Agent-Notes\.txt$/.test(String(pl.path))) || (pl.kind === 'close' && /Pholama-Agent-Notes/.test(String(pl.title))); if (!isNotes) winCalls.push(pl); return { ok: true, text: 'did ' + pl.kind }; } },   // the notes window is the agent's own and is counted separately
     github: github || { execute: async (pl, o) => { ghCalls.push({ pl, token: o.token }); return { ok: true, text: 'gh ok' }; } },
   });
@@ -176,7 +176,7 @@ const TOKEN = { 'x-pholama-token': 'LOGIN-TOKEN-123' };
     await call(s.port, 'POST', '/api/codebase/start', { task: 'x' }, TOKEN); await until(async () => (await call(s.port, 'GET', '/api/codebase/state')).json.done === true);
     const ev = []; await new Promise(res => { const req = http.request({ host: '127.0.0.1', port: s.port, path: '/api/codebase/stream' }, r => { let d = ''; r.on('data', c => { d += c; if (d.includes('"end"')) { ev.push(d); req.destroy(); res(); } }); }); req.on('error', () => res()); req.end(); setTimeout(res, 1500); });
     const all = ev.join('') + JSON.stringify((await call(s.port, 'GET', '/api/codebase/state')).json);
-    ok('a cloud failure shows no model, provider or code to the person', !/qwen|free\.ai|HTTP 5|cloud provider|Agent Max/i.test(all) && /could not answer/i.test(all));
+    ok('a cloud failure shows no model, provider or code to the person', !/qwen|free\.ai|HTTP 5|cloud provider|Agent Max/i.test(all) && /did not answer after a few tries/i.test(all));
     await s.close(); }
   { const s = await boot({ cloud: async () => { throw new TypeError('fetch failed ENOTFOUND secret.internal.host'); } });
     await call(s.port, 'POST', '/api/codebase/start', { task: 'x' }, TOKEN); await until(async () => (await call(s.port, 'GET', '/api/codebase/state')).json.done === true);

@@ -44,7 +44,7 @@ export function rowHtml(d) {
 export function endLine(r) {
   if (!r) return '';
   if (r.ok) return 'Finished in ' + (r.steps || 0) + ' step' + (r.steps === 1 ? '' : 's') + '.';
-  const why = { stuck: 'It got stuck, so it was stopped.', user: 'You stopped it.', credits: 'Out of credits for now.', time: 'It ran out of time.', paused: 'Resting for a while.' };
+  const why = { stuck: 'It got stuck, so it was stopped.', user: 'You stopped it.', stop: 'You stopped it.', credits: 'Out of credits for now.', budget: 'Out of credits for now.', time: 'It ran out of time.', paused: 'Resting for a while.', login: 'Please sign in to Pholama, then press Start.', model: 'The AI did not answer after a few tries. Press Start again in a moment.', error: 'Something went wrong. Press Start to try again.' };
   return why[r.stopped] || 'It stopped.';
 }
 
@@ -58,13 +58,15 @@ export function mountCodebase(root, deps = {}) {
         '<section class="cbs-main">' +
           '<div class="cbs-task"><textarea id="cbsTask" rows="3" maxlength="4000" placeholder="Tell it what to build or fix. It works step by step and asks before changing anything."></textarea>' +
           '<div class="cbs-bar"><select id="cbsKind" aria-label="How hard is the job"><option value="simple">Simple edit</option><option value="hard">Debugging or a big change</option></select>' +
-          '<button id="cbsStart" class="cbs-go">Start</button><button id="cbsStop" class="cbs-stop" disabled>Stop</button><span id="cbsMsg" class="cbs-msg" role="status"></span></div></div>' +
+          '<select id="cbsMinutes" aria-label="Longest it may work"><option value="15">Up to 15 min</option><option value="45" selected>Up to 45 min</option><option value="90">Up to 90 min</option><option value="240">Up to 4 hours</option></select>' +
+          '<select id="cbsMinutes" aria-label="Longest it may work"><option value="15">Up to 15 min</option><option value="45" selected>Up to 45 min</option><option value="90">Up to 90 min</option><option value="240">Up to 4 hours</option></select>' +
+          '<button id="cbsStart" class="cbs-go">Start</button><button id="cbsStop" class="cbs-stop" disabled>Stop</button><button id="cbsClear" title="Empty the list below (it does not stop anything)">Clear</button><button id="cbsClear" title="Empty the list below (it does not stop anything)">Clear</button><span id="cbsMsg" class="cbs-msg" role="status"></span></div></div>' +
           '<ul id="cbsFeed" class="cbs-feed" aria-live="polite"><li class="cbs-empty">Nothing yet. Give it a folder, then a task.</li></ul>' +
         '</section>' +
         '<aside class="cbs-side"><h3>Folders it may use</h3><ul id="cbsGrants" class="cbs-grants"></ul>' +
           '<div class="cbs-add"><input id="cbsDir" type="text" placeholder="C:\\Users\\you\\my-project" aria-label="Folder path"><select id="cbsMode" aria-label="Access"><option value="read">Read only</option><option value="write">Read and change</option></select><button id="cbsGrant">Allow</button></div>' +
           '<p class="cbs-hint">It can only touch folders listed here. Deleting and installing are always asked about, every time.</p>' +
-          '<h3 class="cbs-h3b">Always allowed</h3><ul id="cbsAlways" class="cbs-grants"></ul>' +
+          '<h3 class="cbs-h3b">Always allowed</h3><ul id="cbsAlways" class="cbs-grants"></ul><button id="cbsAlwaysOff" class="cbs-alloff">Turn off all</button>' +
           '<p class="cbs-hint">Kinds of request you pressed "Always allow" for. Turn any of them off here. Dangerous ones (terminal, PowerShell, delete) are never in this list.</p></aside>' +
       '</div></div>';
 
@@ -103,7 +105,7 @@ export function mountCodebase(root, deps = {}) {
     const tk = getToken(); if (!tk) { say('Sign in first. The Codebase uses your Pholama account credits.', true); return; }
     say('Starting...'); busy(true); feed.innerHTML = ''; rows = 0;
     const gh = getGithubToken();
-    const r = await json('/api/codebase/start', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-pholama-token': tk, ...(gh ? { 'x-github-token': gh } : {}) }, body: JSON.stringify({ task, kind: $('#cbsKind').value }) });
+    const r = await json('/api/codebase/start', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-pholama-token': tk, ...(gh ? { 'x-github-token': gh } : {}) }, body: JSON.stringify({ task, kind: $('#cbsKind').value, minutes: Number($('#cbsMinutes').value) || 45 }) });
     if (!r.ok) { busy(false); say(r.j.error || 'It could not start.', true); return; }
     runId = r.j.id || ''; say('Working...'); watch();
   };
@@ -127,10 +129,13 @@ export function mountCodebase(root, deps = {}) {
     const ul = $('#cbsGrants');
     ul.innerHTML = g.length ? g.map(x => '<li><span class="cbs-gd">' + esc(x.dir) + '</span><span class="cbs-gm">' + (x.mode === 'write' ? 'read + change' : 'read only') + '</span><button data-revoke="' + esc(x.dir) + '" aria-label="Remove access">Remove</button></li>').join('') : '<li class="cbs-empty">No folders yet.</li>';
   }
+  $('#cbsClear').onclick = () => { feed.innerHTML = '<li class="cbs-empty">Cleared.</li>'; };
   async function paintAlways(list) {
     const t = list || (await json('/api/codebase/always')).j.tools || [];
     $('#cbsAlways').innerHTML = t.length ? t.map(x => '<li><span class="cbs-gd">' + esc(x) + '</span><span class="cbs-gm">always allowed</span><button data-off="' + esc(x) + '" aria-label="Turn off always allow for ' + esc(x) + '">Turn off</button></li>').join('') : '<li class="cbs-empty">None. Every request asks you first.</li>';
   }
+  $('#cbsAlwaysOff').onclick = async () => { const r = await json('/api/codebase/always', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: '{}' }); paintAlways(r.j.tools); };
+  $('#cbsAlwaysOff').onclick = async () => { const r = await json('/api/codebase/always', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: '{}' }); paintAlways(r.j.tools); };
   $('#cbsAlways').addEventListener('click', async ev => {
     const b = ev.target && ev.target.closest && ev.target.closest('button[data-off]'); if (!b) return;
     const r = await json('/api/codebase/always', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tool: b.dataset.off }) });

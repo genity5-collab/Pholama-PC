@@ -57,7 +57,7 @@ function create(deps) {
   }) : null) : deps.notepad;
   const media = deps.media || require('./codebase-media').create({ getToken: () => state.token, fetchFn, url: deps.mediaUrl, log, onCredits: c => { state.credits = c; } });   // same login as the model, held in memory for one run only
   const tools = deps.tools || buildTools({ ...deps, media, notepad, getGithubToken: deps.getGithubToken || (() => state.gh) });
-  const session = SESSION.create({ model, tools, budget, now });
+  const session = SESSION.create({ model, tools, budget, now, sleep: deps.sleep });
   // The login lives only as long as the run: when the run ends (done, stopped, out of time or credits) it is wiped.
   const wipeWhenDone = () => { const t = setInterval(() => { const st = session.state(); if (st.done || !st.running) { state.token = ''; state.gh = ''; if (notepad) notepad.finish().catch(() => {}); clearInterval(t); } }, 250); if (t.unref) t.unref(); };
 
@@ -104,7 +104,7 @@ function create(deps) {
         state.gh = String(req.headers['x-github-token'] || '').slice(0, 400);   // the person's own GitHub token, if the page has one; never stored, never logged
         state.kind = KINDS.has(body.kind) ? body.kind : 'simple';
         if (notepad && !session.state().running) await notepad.begin(String(body.task || '').slice(0, 120));   // a fresh Notepad page for this run
-        const r = session.start(body.task);
+        const r = session.start(body.task, { maxMinutes: [15, 45, 90, 240].includes(Number(body.minutes)) ? Number(body.minutes) : 45 });
         if (r.ok) wipeWhenDone(); else if (!session.state().running) { state.token = ''; state.gh = ''; }
         send(res, r.ok ? 200 : 409, r.ok ? { ok: true, id: r.id } : { error: r.error }); return true;
       }
