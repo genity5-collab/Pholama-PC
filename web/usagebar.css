@@ -1,0 +1,12 @@
+/* Pholama Codebase usage bar: flat and square like the rest of the workbench theme. */
+.ubar { font-family: var(--ide-mono, ui-monospace, Consolas, monospace); padding: 10px 12px; }
+.ubar-h { font-weight: 700; font-size: 13px; color: var(--fg); margin-bottom: 6px; }
+.ubar-row { display: flex; align-items: center; gap: 14px; }
+.ubar-track { position: relative; flex: 1; height: 22px; background: var(--card2); overflow: hidden; }
+.ubar-track i { display: block; height: 100%; background: var(--ubar-fill, var(--acc)); transition: width .4s ease; }
+.ubar-track b { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--bg); opacity: .9; }   /* where the 7-hour rests happen */
+.ubar-pct { min-width: 78px; font-size: 13px; color: var(--fg); }
+.ubar-sub { margin-top: 6px; font-size: 12px; color: var(--mut); }
+.ubar.paused { --ubar-fill: var(--warn); }
+.ubar.locked { --ubar-fill: var(--err); }
+@media (prefers-reduced-motion: reduce) { .ubar-track i { transition: none; } }
