@@ -1,0 +1,30 @@
+'use strict';
+// The Windows background-update scheduler on a PRETEND Windows with a fake schtasks.exe: a PC that refuses the sign-in task (it needs administrator rights) must still get the 5-hourly one, and nothing may ever print a raw command line.
+const cp = require('child_process'), os = require('os'), path = require('path'), fs = require('fs');
+let pass = 0, fail = 0; const ok = (n, c, x) => { if (c) { pass++; console.log('PASS ' + n); } else { fail++; console.log('FAIL ' + n + (x ? '  -> ' + String(x).slice(0, 200) : '')); } };
+const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sched-')); process.env.USERPROFILE = home; process.env.HOME = home; process.env.PHOLAMA_HOME = path.join(home, '.pholama');
+const calls = []; let rule = () => true; const orig = cp.execFileSync;
+cp.execFileSync = (cmd, args, o) => { if (cmd === 'schtasks.exe') { calls.push(args.slice()); if (!rule(args)) throw new Error('Command failed: schtasks.exe ' + args.join(' ')); return Buffer.alloc(0); } return orig(cmd, args, o); };
+Object.defineProperty(process, 'platform', { value: 'win32' });
+const S = require('../server/update-scheduler.js');
+const run = r => { calls.length = 0; rule = r; try { return { out: S.install(), calls: calls.map(c => c.join(' ')) }; } catch (e) { return { err: e.message, calls: calls.map(c => c.join(' ')) }; } };
+const create = c => c.filter(x => x.startsWith('/Create'));
+let r = run(() => true);
+ok('everything allowed: both tasks, strictest options first', !r.err && /every 5 hours and at sign-in/.test(r.out) && create(r.calls).length === 2 && create(r.calls)[0].includes('/RL LIMITED /IT'), JSON.stringify(r));
+r = run(a => !a.includes('ONLOGON'));
+ok('the sign-in task is refused (needs admin): the 5-hourly task is still installed, no error', !r.err && /every 5 hours\.$/.test(r.out), JSON.stringify(r));
+ok('...and the message does not claim a sign-in task', !/sign-in/.test(r.out));
+r = run(a => !a.includes('/IT'));
+ok('/IT refused: it retries without it and succeeds for both tasks', !r.err && /at sign-in/.test(r.out) && create(r.calls).length === 4, JSON.stringify(r));
+r = run(a => !a.includes('/RL'));
+ok('/RL refused: it retries with the simplest form', !r.err && /at sign-in/.test(r.out));
+r = run(a => !a.includes('HOURLY'));
+ok('only the sign-in task works: it says so and does not fail', !r.err && /when you sign in/.test(r.out), JSON.stringify(r));
+r = run(() => false);
+ok('nothing works: one plain error, no command line in it', r.err && !/schtasks|\/SC|\/TR|wscript/.test(r.err) && r.err.length < 120, r.err);
+ok('the task runs a hidden script, not a console window', create(run(() => true).calls).every(c => /wscript\.exe \/\/B \/\/NoLogo/.test(c)));
+// the real command: never a stack trace
+const CLI = path.join(__dirname, '..', 'server', 'cli.js'); const wrap = fs.readFileSync(CLI, 'utf8');
+ok('the schedule-updates command catches every error and prints a plain sentence', /function cmdScheduleUpdates\(\) \{\s*[\s\S]{0,200}try \{ console\.log\(green\(require\('\.\/update-scheduler'\)\.install\(\)\)\); \}\s*catch \(e\)/.test(wrap) && /pholama update/.test(wrap.split('function cmdScheduleUpdates')[1].split('function help')[0]));
+fs.rmSync(home, { recursive: true, force: true });
+console.log(`\n${fail ? 'FAILURES: ' + fail : 'ALL PASSED'} (${pass} checks)`); process.exit(fail ? 1 : 0);

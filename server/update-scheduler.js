@@ -20,10 +20,19 @@ function installWindows() {
   const command = vb(NODE) + ' ' + vb(CLI) + ' update --if-closed';
   fs.writeFileSync(files().vbs, 'Set sh = CreateObject("WScript.Shell")\r\nsh.CurrentDirectory = ' + vb(ROOT) + '\r\nsh.Run ' + vb(command) + ', 0, True\r\n', 'ascii');
   const action = 'wscript.exe //B //NoLogo "' + files().vbs + '"';
-  const create = (name, trigger) => execFileSync('schtasks.exe', ['/Create', ...trigger, '/TN', name, '/TR', action, '/F', '/RL', 'LIMITED', '/IT'], { stdio: 'ignore', windowsHide: true, timeout: 15000 });
-  create('Pholama Background Update', ['/SC', 'HOURLY', '/MO', '5']);
-  create('Pholama Background Update on logon', ['/SC', 'ONLOGON']);
-  return 'Background updates are scheduled every 5 hours and at sign-in.';
+  // /IT (only while signed in) and /RL LIMITED keep it a normal user task. Some PCs refuse one of them, so the tries go from strictest to simplest.
+  const create = (name, trigger) => {
+    let last = null;
+    for (const extra of [['/RL', 'LIMITED', '/IT'], ['/RL', 'LIMITED'], []]) {
+      try { execFileSync('schtasks.exe', ['/Create', ...trigger, '/TN', name, '/TR', action, '/F', ...extra], { stdio: 'ignore', windowsHide: true, timeout: 15000 }); return true; } catch (e) { last = e; }
+    }
+    return false;
+  };
+  const hourly = create('Pholama Background Update', ['/SC', 'HOURLY', '/MO', '5']);
+  // A task that runs at sign-in needs administrator rights on many PCs. It is only a bonus: the 5-hourly task already keeps Pholama up to date.
+  const logon = create('Pholama Background Update on logon', ['/SC', 'ONLOGON']);
+  if (!hourly && !logon) throw new Error('Windows would not let Pholama schedule background updates.');
+  return hourly ? 'Background updates are scheduled every 5 hours' + (logon ? ' and at sign-in.' : '.') : 'Background updates run when you sign in.';
 }
 function removeWindows() {
   for (const name of ['Pholama Background Update', 'Pholama Background Update on logon']) {

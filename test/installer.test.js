@@ -23,7 +23,7 @@ function install(tarball, home, { curlFails = false } = {}) {
   fs.writeFileSync(path.join(bin, 'curl'), `#!/bin/sh\n${curlFails ? 'exit 22' : ''}\nwhile [ $# -gt 0 ]; do [ "$1" = "-o" ] && out="$2"; shift; done\ncp "${tarball}" "$out"\n`, { mode: 0o755 });
   // node stub that does nothing (the real one would start a server at the end)
   fs.writeFileSync(path.join(bin, 'node'), `#!/bin/sh\ncase "$*" in *"process.versions"*) echo 20;; esac\nexit 0\n`, { mode: 0o755 });
-  const r = cp.spawnSync('bash', [SH], { env: { PATH: bin + ':/usr/bin:/bin', HOME: home }, encoding: 'utf8', timeout: 60 });
+  const r = cp.spawnSync('bash', [SH], { env: { PATH: bin + ':/usr/bin:/bin', HOME: home }, encoding: 'utf8', timeout: 180000 });
   return { code: r.status, out: (r.stdout || '') + (r.stderr || '') };
 }
 const homeN = n => { const h = path.join(root, 'home-' + n); fs.mkdirSync(h, { recursive: true }); return h; };
@@ -102,6 +102,11 @@ ok('windows: leftovers newer than 10 minutes are kept (another window may be ins
 ok('windows: a half-finished install is cleaned only when server\\cli.js is missing', /Test-Path \$dir\) -and -not \(Test-Path \(Join-Path \$dir 'server\\cli\.js'\)\)/.test(ps));
 ok('windows: the cleanup keeps node_modules and never names .pholama', /-ne 'node_modules'/.test(ps.split('function Clean-OldAttempts')[1].split('Clean-OldAttempts\n')[0]));
 ok('windows: the cleanup is wrapped so a locked file can never stop the install', (ps.split('function Clean-OldAttempts')[1].split('\nClean-OldAttempts')[0].match(/try \{/g) || []).length >= 2);
+{ const sec = ps.slice(ps.indexOf('Background updates are optional'), ps.indexOf("$path = [Environment]::GetEnvironmentVariable"));
+  ok('windows: scheduling background updates can never abort the install (strict mode relaxed for that one call, then restored)', /\$prevEap = \$ErrorActionPreference; \$ErrorActionPreference = 'Continue'/.test(sec) && /\$ErrorActionPreference = \$prevEap/.test(sec) && sec.indexOf("'Continue'") < sec.indexOf('schedule-updates') && sec.indexOf('schedule-updates') < sec.indexOf('= $prevEap'));
+  ok('windows: the scheduling call is inside try/catch and its text is never shown raw', /try \{ \$schedOut = \(& \$nodeExe/.test(sec) && !/Write-Host \$schedOut|Say \$schedOut/.test(sec));
+  ok('windows: after scheduling, the install carries on to the PATH, the icons and the app', ps.indexOf("$path = [Environment]::GetEnvironmentVariable") > ps.indexOf('schedule-updates') && ps.indexOf('CreateShortcut') > ps.indexOf('schedule-updates'));
+  ok('windows: a refused schedule gets a friendly sentence with the manual way to update', /could not set up automatic background updates[\s\S]{0,120}pholama update/.test(sec)); }
 ok('windows: the failure paths return instead of continuing', (ps.match(/\n\s*return\n/g) || []).length >= 3);
 
 fs.rmSync(root, { recursive: true, force: true });

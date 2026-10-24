@@ -228,7 +228,9 @@ async function cmdUpdate(args = []) {
 }
 
 function cmdScheduleUpdates() {
-  console.log(green(require('./update-scheduler').install()));
+  // Never a stack trace and never a raw command line: say plainly what happened. Updates also work by hand: pholama update.
+  try { console.log(green(require('./update-scheduler').install())); }
+  catch (e) { console.log('Could not set up background updates (' + String(e && e.message || e).split('\n')[0].replace(/schtasks[^\n]*/i, 'the Windows task scheduler').slice(0, 120) + '). Pholama still works, and you can update any time with: pholama update'); process.exitCode = 1; }
 }
 
 function help() {

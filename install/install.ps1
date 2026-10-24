@@ -92,8 +92,14 @@ foreach ($f in 'server\cli.js','server\server.js','models.pc.json') {
 # make the pholama command available in new terminals
 $bin = Join-Path $env:USERPROFILE '.pholama\cmd'; New-Item -ItemType Directory -Path $bin -Force | Out-Null
 foreach ($n in 'pholama','phollama') { Set-Content -Path (Join-Path $bin "$n.cmd") -Value "@echo off`r`n`"$nodeExe`" `"$dir\server\cli.js`" %*" -Encoding ASCII }
-$null = & $nodeExe (Join-Path $dir 'server\cli.js') schedule-updates 2>&1
-if ($LASTEXITCODE -eq 0) { Say "Background updates are scheduled every 5 hours while Pholama is closed." } else { Say "Could not install background updates. Retry later with: pholama schedule-updates" }
+# Background updates are optional. A native program that writes to the error stream must never abort the install, so the strict mode is relaxed for this one call
+# (with $ErrorActionPreference = 'Stop', PowerShell turns any such text into a red NativeCommandError and stops).
+$prevEap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+$schedOut = ''
+try { $schedOut = (& $nodeExe (Join-Path $dir 'server\cli.js') schedule-updates 2>&1 | Out-String).Trim() } catch { $schedOut = '' }
+$schedCode = $LASTEXITCODE
+$ErrorActionPreference = $prevEap
+if ($schedCode -eq 0) { Say "Background updates are scheduled every 5 hours while Pholama is closed." } else { Say "Pholama could not set up automatic background updates on this PC. That is fine: it still works, and you can update any time with: pholama update" }
 $path = [Environment]::GetEnvironmentVariable('Path','User')
 if (($path -split ';') -notcontains $bin) { [Environment]::SetEnvironmentVariable('Path', "$path;$bin", 'User') }
 # Desktop + Start Menu shortcuts that carry the Pholama llama icon, so it is easy to spot and click
