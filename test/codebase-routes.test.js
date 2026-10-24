@@ -132,6 +132,15 @@ const TOKEN = { 'x-pholama-token': 'LOGIN-TOKEN-123' };
     await call(s.port, 'POST', '/api/codebase/start', { task: 'x' }, TOKEN); await until(async () => (await call(s.port, 'GET', '/api/codebase/state')).json.done === true);
     ok('an environment GitHub token is never used by the routes', s.ghCalls.length === 1 && !String(s.ghCalls[0].token).includes('ENVIRONMENTONLY'));
     if (old === undefined) delete process.env.GITHUB_TOKEN_5; else process.env.GITHUB_TOKEN_5 = old; await s.close(); }
+  // ---- the usage bar's route ----
+  { const s = await bootWith({ script: [], notepad: null });
+    const u = await call(s.port, 'GET', '/api/codebase/usage', null, {});
+    ok('usage answers with the budget numbers', u.status === 200 && typeof u.json.used === 'number' && u.json.cap === 15000 && ['ok', 'paused', 'locked'].includes(u.json.state));
+    ok('usage includes the clock and timezone the bar needs', typeof u.json.now === 'number' && typeof u.json.tz === 'string' && u.json.tz.length > 0);
+    ok('usage never carries a token or a login', !/token|ghp_|eyJ/i.test(JSON.stringify(u.json)));
+    const w = await call(s.port, 'POST', '/api/codebase/usage', {}, {}); ok('usage cannot be written', w.status !== 200);
+    await s.close(); }
+
   // ---- live Notepad notes ----
   { const log = { writes: [], appends: [], opens: [], closes: [] };
     const np = require('../server/codebase-notepad').create({ dir: '/tmp/x', write: async (f, c) => { log.writes.push(c); }, append: async (f, c) => { log.appends.push(c); }, open: async f => { log.opens.push(f); return { ok: true }; }, close: async ti => { log.closes.push(ti); } });

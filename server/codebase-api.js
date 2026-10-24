@@ -77,6 +77,10 @@ function create(deps) {
         res.write(': hello\n\n'); const beat = setInterval(() => { try { res.write(': \n\n'); } catch {} }, 20000); if (beat.unref) beat.unref();
         const done = () => { clearInterval(beat); stop(); }; req.on('close', done); res.on('error', done); return true;
       }
+      if (p === '/api/codebase/usage' && method === 'GET') {   // the usage bar on the page: 5,000 / 7-hour rests / 15,000 per month
+        let tz = 'UTC'; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch {}
+        send(res, 200, { ...budget.view(budget.load(now()), now()), now: now(), tz }); return true;
+      }
       if (p === '/api/codebase/grants' && method === 'GET') { send(res, 200, { grants: grants.list() }); return true; }
 
       // ---- writes (every one reads a small, size-limited body) ----

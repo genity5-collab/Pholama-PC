@@ -1,6 +1,17 @@
 {
- "latest": "0.9.44",
+ "latest": "0.9.45",
  "releases": [
+  {
+   "version": "0.9.45",
+   "date": "2026-10-24",
+   "title": "Codebase: a coding agent you can watch",
+   "notes": [
+    "New Codebase tab (on your own PC only): give it a folder, describe the job, and watch it work step by step.",
+    "It asks Allow or Deny before changing anything, and always asks before deleting or installing. It can only use the folders you list.",
+    "Its notes show live in a Notepad window, and a usage bar shows your month: a rest after every 5,000 credits, 15,000 in total.",
+    "Stop cancels the work at once. If it gets stuck repeating itself, it stops by itself so credits are not wasted."
+   ]
+  },
   {
    "version": "0.9.44",
    "date": "2026-10-23",

@@ -1160,8 +1160,9 @@ function showView(name) {
   const studioView = name === 'studio';
   const st = studioView || name === 'workspace', dh = name === 'dash';
   const ws = name === 'workspace';
-  document.body.classList.toggle('studio-on', st || ws); document.body.classList.toggle('dash-on', dh); $('#studio').hidden = !studioView; const wz = $('#workspace'); if (wz) wz.hidden = !ws; const dz = $('#dash'); if (dz) dz.hidden = !dh;
-  for (const [id, on] of [['#vDash', dh], ['#vChat', name === 'chat'], ['#vStudio', st], ['#vWorkspace', ws]]) { const b = $(id); if (!b) continue; b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on)); }
+  const cbv = name === 'codebase';
+  document.body.classList.toggle('studio-on', st || ws || cbv); document.body.classList.toggle('dash-on', dh); $('#studio').hidden = !studioView; const wz = $('#workspace'); if (wz) wz.hidden = !ws; const dz = $('#dash'); if (dz) dz.hidden = !dh; const cz = $('#codebase'); if (cz) cz.hidden = !cbv; document.body.classList.toggle('codebase-on', cbv);   // the usage bar (#cbUsage) is shown by CSS only while this view is open
+  for (const [id, on] of [['#vDash', dh], ['#vChat', name === 'chat'], ['#vStudio', st], ['#vWorkspace', ws], ['#vCodebase', cbv]]) { const b = $(id); if (!b) continue; b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on)); }
   if (dh) paintDashboard();
   try { localStorage.setItem('pholama_view', name); } catch {}
 }
@@ -1223,12 +1224,25 @@ function studioTab(onPc) {
   // identical. The legacy workspace tab remains in the DOM for old links,
   // but is not exposed as a second competing Studio view.
   const w = $('#vWorkspace'); if (w) w.style.display = 'none';
+  const cbt = $('#vCodebase'); if (cbt) cbt.style.display = onPc ? '' : 'none';   // the Codebase edits files on this computer, so it exists only on the PC itself
   if (!onPc && (document.body.classList.contains('studio-on'))) showView('chat');
 }
 $('#vDash').onclick = () => showView('dash');
 $('#vChat').onclick = () => showView('chat');
 $('#vStudio').onclick = () => openWorkspace();
 const vw = $('#vWorkspace'); if (vw) vw.onclick = () => openWorkspace();
+let codebaseScreen = null;
+async function openCodebase() {
+  showView('codebase');
+  try {
+    if (!codebaseScreen) {
+      const { mountCodebase } = await import('./codebasescreen.js');
+      codebaseScreen = mountCodebase($('#codebase'), { getToken: () => (typeof Account !== 'undefined' && Account.token && Account.token()) || '', getGithubToken: () => (typeof Account !== 'undefined' && Account.githubToken && Account.githubToken()) || '' });
+    }
+    await codebaseScreen.open();
+  } catch (e) { $('#codebase').textContent = 'The Codebase could not load: ' + (e && e.message || e); console.warn(e); }
+}
+const vcb = $('#vCodebase'); if (vcb) vcb.onclick = () => openCodebase();
 
 // The welcome screen on the user's own PC: real facts about this machine, nothing invented.
 function paintPcWelcome() {

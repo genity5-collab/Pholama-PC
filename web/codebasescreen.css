@@ -1,0 +1,40 @@
+/* The Codebase screen: flat and square like the rest of the workbench theme. */
+#codebase { padding: 0; }
+.cbs { font-family: var(--ide-mono, ui-monospace, Consolas, monospace); color: var(--fg); max-width: 1180px; margin: 0 auto; padding: 14px; }
+.cbs-top { display: flex; align-items: flex-start; gap: 18px; flex-wrap: wrap; margin-bottom: 12px; }
+.cbs-top h2 { margin: 0; font-size: 16px; padding-top: 10px; }
+.cbs-usage { flex: 1; min-width: 280px; }
+.cbs-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 14px; }
+@media (max-width: 860px) { .cbs-grid { grid-template-columns: minmax(0, 1fr); } }
+.cbs-task textarea { width: 100%; box-sizing: border-box; background: var(--card2); color: var(--fg); border: 1px solid var(--line, #3c3c3c); border-radius: 0; padding: 10px; font: inherit; font-size: 13px; resize: vertical; }
+.cbs-bar { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.cbs-bar select, .cbs-add select, .cbs-add input { background: var(--card2); color: var(--fg); border: 1px solid var(--line, #3c3c3c); border-radius: 0; padding: 6px 8px; font: inherit; font-size: 12px; }
+.cbs button { border-radius: 0; border: 1px solid var(--line, #3c3c3c); background: var(--card2); color: var(--fg); padding: 6px 12px; font: inherit; font-size: 12px; cursor: pointer; }
+.cbs button:disabled { opacity: .45; cursor: default; }
+.cbs-go { background: var(--acc) !important; color: #fff !important; border-color: var(--acc) !important; }
+.cbs-stop { border-color: #c0392b !important; color: #e57368 !important; }
+.cbs-msg { font-size: 12px; opacity: .85; }
+.cbs-msg.bad { color: #e57368; opacity: 1; }
+.cbs-feed { list-style: none; margin: 12px 0 0; padding: 0; background: var(--card2); border: 1px solid var(--line, #3c3c3c); min-height: 220px; max-height: 62vh; overflow: auto; }
+.cbs-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; padding: 6px 10px; border-bottom: 1px solid rgba(128,128,128,.18); font-size: 12px; }
+.cbs-tag { min-width: 56px; font-weight: 700; font-size: 11px; opacity: .8; }
+.cbs-txt { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.cbs-cost { opacity: .6; font-size: 11px; }
+.cbs-res { flex-basis: 100%; padding-left: 64px; opacity: .7; font-size: 11px; overflow-wrap: anywhere; }
+.cbs-row.good .cbs-tag { color: #4ec9b0; } .cbs-row.bad .cbs-tag { color: #e57368; } .cbs-row.warn .cbs-tag { color: #d7ba7d; }
+.cbs-row.ask .cbs-tag { color: var(--acc); } .cbs-row.note .cbs-tag { color: #9cdcfe; }
+.cbs-empty { padding: 14px; opacity: .6; font-size: 12px; list-style: none; }
+.cbs-ask { flex-basis: 100%; border: 1px solid var(--acc); padding: 8px 10px; margin: 4px 0 2px; font-size: 12px; }
+.cbs-ask.strict { border-color: #c0392b; background: rgba(192,57,43,.08); }
+.cbs-ask pre { margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; opacity: .85; }
+.cbs-btns { display: flex; gap: 8px; margin-top: 6px; }
+.cbs-allow { background: var(--acc) !important; color: #fff !important; border-color: var(--acc) !important; }
+.cbs-side h3 { margin: 0 0 8px; font-size: 13px; }
+.cbs-grants { list-style: none; margin: 0 0 10px; padding: 0; }
+.cbs-grants li { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 0; border-bottom: 1px solid rgba(128,128,128,.18); font-size: 12px; }
+.cbs-gd { flex: 1 1 100%; overflow-wrap: anywhere; } .cbs-gm { opacity: .65; font-size: 11px; flex: 1; }
+.cbs-add { display: flex; flex-direction: column; gap: 6px; } .cbs-add input { width: 100%; box-sizing: border-box; }
+.cbs-hint { font-size: 11px; opacity: .65; margin: 8px 0 0; line-height: 1.5; }
+
+#cbUsage { max-width: 1180px; margin: 0 auto; padding: 0 14px; }
+body:not(.codebase-on) #cbUsage { display: none; }   /* shown only while the Codebase view is open (app.js sets body.codebase-on) */
