@@ -13,8 +13,8 @@ const TOOLS = {
   next_task:   { level: 'none',   cost: 0,  where: 'agent',  does: 'Say the first task is finished and start the next one. A new note is then required before any edit.' },
   // --- cloud only: nothing touches the PC ---
   cloud_browse:{ level: 'none',   cost: 0,  where: 'cloud',  does: 'Browse and search the web from the cloud. Nothing opens on the PC.' },
-  github_read: { level: 'none',   cost: 0,  where: 'cloud',  does: 'Read GitHub: list files, read a file, list commits.' },
-  github_write:{ level: 'ask',    cost: 0,  where: 'cloud',  does: 'Write to GitHub: commit, push, branch, open a pull request.' },
+  github_read: { level: 'none',   cost: 0,  where: 'cloud',  does: 'Read GitHub. Give action and repo (owner/name): list_files, read_file (path), commits, repo_info, list_branches, pages_status; optional ref (branch).' },
+  github_write:{ level: 'ask',    cost: 0,  where: 'cloud',  does: 'Write to GitHub, never to the main branch. Actions: create_branch (branch pholama/...), write_files (branch, message, files:[{path,content}]), open_pr (branch, title), publish_preview (files with index.html: a built web app shown on GitHub Pages), enable_pages.' },
   // --- moving files between the PC and the cloud (safer than editing in place) ---
   pull_file:   { level: 'ask',    cost: 0,  where: 'pc',     does: 'Copy a PC file into the agent cloud so it can work on the copy.' },
   push_files_to_pc: { level: 'ask', cost: 0, where: 'pc',    does: 'Send fixed files from the agent cloud back to the PC.' },

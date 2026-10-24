@@ -30,8 +30,19 @@ command -v curl >/dev/null 2>&1 || { say "curl is needed."; exit 1; }
 command -v tar >/dev/null 2>&1 || { say "tar is needed."; exit 1; }
 say "Downloading Pholama to $DIR ..."
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-curl -fsSL "$TAR" -o "$TMP/p.tgz"; tar -xzf "$TMP/p.tgz" -C "$TMP"
-mkdir -p "$DIR"; cp -R "$TMP"/Pholama-main/. "$DIR"/
+if ! curl -fsSL "$TAR" -o "$TMP/p.tgz"; then say "Could not download Pholama. Check your internet connection and run the command again."; exit 1; fi
+if ! tar -xzf "$TMP/p.tgz" -C "$TMP"; then say "The download was damaged. Run the command again."; exit 1; fi
+# Never touch an existing install unless the download really unpacked into a complete Pholama.
+for f in server/cli.js server/server.js models.pc.json; do
+  [ -f "$TMP/Pholama-main/$f" ] || { say "The download was incomplete ($f is missing), so nothing was changed. Run the command again."; exit 1; }
+done
+mkdir -p "$DIR"
+# Reinstall cleanly: remove the old app files first so nothing stale stays. Models and chats live in ~/.pholama, not here.
+find "$DIR" -mindepth 1 -maxdepth 1 ! -name node_modules -exec rm -rf {} + 2>/dev/null || true
+cp -R "$TMP"/Pholama-main/. "$DIR"/
+for f in server/cli.js server/server.js models.pc.json; do
+  [ -f "$DIR/$f" ] || { say "Install failed: $f is missing in $DIR. Run the command again."; exit 1; }
+done
 chmod +x "$DIR/start.sh" "$DIR/server/server.js"
 # make the pholama command available
 mkdir -p "$HOME/.local/bin"

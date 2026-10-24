@@ -84,5 +84,13 @@ ok('bad args shapes do not crash', [null, undefined, 5, 'x', [], true].every(a =
 ok('note needs text', P.plan('note_', { text: 'plan' }).ok && !P.plan('note_', {}).ok && !P.plan('note_', { text: '  ' }).ok);
 ok('psq quotes safely', P.psq("it's") === "'it''s'" && P.psq("a'; X; '") === "'a''; X; '''");
 
+// 10. GitHub goes through the typed module: the old free-text form is gone
+ok('free-text github_write is refused', P.plan('github_write', { what: 'push everything to main' }).ok === false);
+ok('free-text github_read is refused', P.plan('github_read', { what: 'read the secrets' }).ok === false);
+ok('typed github_read plans', P.plan('github_read', { action: 'repo_info', repo: 'o/r' }).ok === true);
+ok('typed github_write to a pholama branch plans', P.plan('github_write', { action: 'create_branch', repo: 'o/r', branch: 'pholama/x' }).ok === true);
+ok('github_write to main is refused through the planner too', P.plan('github_write', { action: 'write_files', repo: 'o/r', branch: 'main', message: 'm', files: [{ path: 'a', content: 'x' }] }).ok === false);
+ok('github_write of a workflow file is refused through the planner too', P.plan('github_write', { action: 'write_files', repo: 'o/r', branch: 'pholama/x', message: 'm', files: [{ path: '.github/workflows/ci.yml', content: 'x' }] }).ok === false);
+
 console.log(`\n${fail ? 'FAILURES: ' + fail : 'ALL PASSED'} (${pass} checks)`);
 process.exit(fail ? 1 : 0);

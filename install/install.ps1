@@ -40,11 +40,31 @@ if (-not $ok) {
 Say "Downloading Pholama to $dir ..."
 $tmp = Join-Path $env:TEMP ('pholama_' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $tmp | Out-Null
-Invoke-WebRequest $zip -OutFile "$tmp\p.zip"
-Expand-Archive "$tmp\p.zip" -DestinationPath $tmp -Force
+try {
+  Invoke-WebRequest $zip -OutFile "$tmp\p.zip" -UseBasicParsing
+  Expand-Archive "$tmp\p.zip" -DestinationPath $tmp -Force
+} catch {
+  Say "Could not download Pholama ($($_.Exception.Message)). Check your internet connection and run the command again."
+  Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+  return
+}
+$src = Join-Path $tmp 'Pholama-main'
+# Never touch an existing install unless the download really unpacked into a complete Pholama.
+foreach ($f in 'server\cli.js','server\server.js','models.pc.json') {
+  if (-not (Test-Path (Join-Path $src $f))) {
+    Say "The download was incomplete ($f is missing), so nothing was changed. Run the command again."
+    Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+    return
+  }
+}
 New-Item -ItemType Directory -Path $dir -Force | Out-Null
-Copy-Item "$tmp\Pholama-main\*" $dir -Recurse -Force
+# Reinstall cleanly: replace the app code, but keep nothing stale from an older version. Models and chats live in .pholama, not here.
+Get-ChildItem $dir -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -notin @('node_modules') } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+Copy-Item (Join-Path $src '*') $dir -Recurse -Force
 Remove-Item $tmp -Recurse -Force
+foreach ($f in 'server\cli.js','server\server.js','models.pc.json') {
+  if (-not (Test-Path (Join-Path $dir $f))) { Say "Install failed: $f is missing in $dir. Run the command again."; return }
+}
 # make the pholama command available in new terminals
 $bin = Join-Path $env:USERPROFILE '.pholama\cmd'; New-Item -ItemType Directory -Path $bin -Force | Out-Null
 foreach ($n in 'pholama','phollama') { Set-Content -Path (Join-Path $bin "$n.cmd") -Value "@echo off`r`n`"$nodeExe`" `"$dir\server\cli.js`" %*" -Encoding ASCII }

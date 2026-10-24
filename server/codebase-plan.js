@@ -97,8 +97,8 @@ const PLANNERS = {
   },
   terminal_open(a) { return shell(a, 'terminal'); },
   windows_powershell(a) { return shell(a, 'powershell'); },
-  github_read(a) { if (!isStr(a.what) || a.what.length > 500) return no('Say what to read.'); return { ok: true, kind: 'github_read', what: a.what }; },
-  github_write(a) { if (!isStr(a.what) || a.what.length > 500) return no('Say what to write.'); return { ok: true, kind: 'github_write', what: a.what }; },
+  github_read(a) { return require('./codebase-github').plan('github_read', a); },
+  github_write(a) { return require('./codebase-github').plan('github_write', a); },
 };
 function shell(a, kind) {
   if (!isStr(a.command) || !a.command.trim()) return no('Give the command to run.');

@@ -23,13 +23,15 @@ const human = b => b >= 2 ** 30 ? (b / 2 ** 30).toFixed(2) + ' GB' : b >= 2 ** 2
 // Everything Pholama may have put on this PC. Each item: { label, path, kind }
 function plan(appRoot) {
   const H = home(), items = [];
-  const add = (label, p, kind) => { if (p && fs.existsSync(p)) items.push({ label, path: p, kind }); };
+  const seen = new Set();
+  const add = (label, p, kind) => { if (p && !seen.has(p) && fs.existsSync(p)) { seen.add(p); items.push({ label, path: p, kind }); } };
   const apps = new Set([appRoot, path.join(H, 'Pholama')].filter(d => d && isPholamaApp(d)));
   for (const d of apps) add('Pholama app folder', d, 'dir');
-  if (isPholamaData(dataDir())) add('Models, private Node.js, llama.cpp and settings', dataDir(), 'dir');
+  const data = process.env.PHOLAMA_HOME && isPholamaDataDir(process.env.PHOLAMA_HOME) ? process.env.PHOLAMA_HOME : dataDir();
+  if (isPholamaDataDir(data)) add('Models, AIs, private Node.js, llama.cpp, Codebase settings and downloads', data, 'dir');
   if (process.platform === 'win32') {
     const sh = (n) => { try { return execSync(`powershell -NoProfile -Command "[Environment]::GetFolderPath('${n}')"`, { encoding: 'utf8', timeout: 8000, windowsHide: true }).trim(); } catch { return ''; } };
-    for (const [n, where] of [['Desktop', 'Desktop'], ['Programs', 'Start Menu']]) { const d = sh(n); if (d) add('Pholama icon on ' + where, path.join(d, 'Pholama.lnk'), 'file'); }
+    for (const [n, where] of [['Desktop', 'Desktop'], ['Programs', 'Start Menu'], ['CommonDesktopDirectory', 'shared Desktop']]) { const d = sh(n); if (d) add('Pholama icon on ' + where, path.join(d, 'Pholama.lnk'), 'file'); }
   } else {
     add('pholama command', path.join(H, '.local', 'bin', 'pholama'), 'file');
     add('phollama command', path.join(H, '.local', 'bin', 'phollama'), 'file');
@@ -38,6 +40,19 @@ function plan(appRoot) {
     add('Pholama icon on Desktop', path.join(H, 'Desktop', 'Pholama.command'), 'file');
   }
   return items;
+}
+
+// The data folder is Pholama's only if it is named .pholama (or is the folder PHOLAMA_HOME points at inside a temp/home area), never a drive root or the home folder itself.
+function isPholamaDataDir(dir) {
+  try {
+    const real = path.resolve(dir);
+    if (real === path.parse(real).root || real === path.resolve(home())) return false;
+    if (path.basename(real) === '.pholama') return true;
+    // A custom data folder (PHOLAMA_HOME) only counts if it carries Pholama's own markers: never a folder that merely exists.
+    if (!process.env.PHOLAMA_HOME || path.resolve(process.env.PHOLAMA_HOME) !== real) return false;
+    const marks = ['state.json', 'models', 'update.json', 'edit-log.jsonl', 'codebase-grants.json', 'workspace'].filter(m => fs.existsSync(path.join(real, m)));
+    return marks.length >= 2 && fs.existsSync(path.join(real, 'state.json'));
+  } catch { return false; }
 }
 
 function removeNow(it) {
@@ -71,16 +86,26 @@ async function run(args, deps) {
   }
 
   log('\nStopping Pholama and every local AI...');
-  try { require('./update-scheduler').remove(); log('  ' + C.green('removed ') + 'background update task'); } catch { log('  ' + C.yellow('could not remove the background update task')); }
-  try { await deps.stopServer(); } catch {}
-  await new Promise(r => setTimeout(r, 1200));
+  try { require('./update-scheduler').remove(); log('  ' + C.green('removed ') + 'background update task'); } catch { log('  ' + C.yellow('could not remove the background update task (it will do nothing once Pholama is gone)')); }
+  const roots = items.filter(i => i.kind === 'dir').map(i => i.path);
+  const dataRoot = items.find(i => /Models, AIs/.test(i.label));
+  const pidFiles = ['server.pid', 'helper.pid', 'engine.pid', 'llama.pid'].map(n => path.join(dataRoot ? dataRoot.path : dataDir(), n));
+  let stop = { stopped: [], failed: [], left: [], unreadable: false };
+  try { stop = await (deps.stopAll || require('./stopall').stopAll)(roots, { polite: deps.stopServer, pidFiles }); } catch (e) { log('  ' + C.yellow('could not check running programs: ' + (e && e.message))); }
+  for (const p of stop.stopped) log('  ' + C.green('stopped ') + (p.name || 'program') + C.dim(' (pid ' + p.pid + ')'));
+  if (!stop.stopped.length && !stop.failed.length) log('  ' + C.dim('no Pholama program was running'));
+  for (const p of stop.failed) log('  ' + C.red('could not stop ') + (p.name || 'program') + C.dim(' (pid ' + p.pid + '). Close it in Task Manager, then run this again.'));
+  if (stop.unreadable) log('  ' + C.yellow('could not list running programs, so some may still be open. Files that are in use are removed after a restart of this window.'));
+  await new Promise(r => setTimeout(r, 600));
 
-  const later = [];   // things Windows will not let us delete while this program is still running
+  const later = [];   // things Windows will not let us delete while this program is still running or a file is in use
+  const gone = [], failedItems = [];
   for (const it of items) {
     if (process.platform === 'win32' && it.kind === 'dir' && (process.argv[1] || '').toLowerCase().startsWith(it.path.toLowerCase())) { later.push(it); continue; }
-    const ok = removeNow(it);
+    let ok = removeNow(it);
+    if (!ok) { await new Promise(r => setTimeout(r, 900)); ok = removeNow(it); }   // one more try: an engine may have just let go of its files
     log('  ' + (ok ? C.green('removed ') : C.red('could not remove ')) + it.path);
-    if (!ok) later.push(it);
+    if (ok) gone.push(it); else { later.push(it); }
   }
   if (process.platform === 'win32') {
     try {   // take pholama out of the user PATH
@@ -89,18 +114,23 @@ async function run(args, deps) {
       log('  ' + C.green('removed ') + 'pholama from your PATH');
     } catch { log('  ' + C.yellow('Could not edit PATH. It is harmless: the folder is gone.')); }
   }
-  if (later.length) {   // delete after this process has exited
+  if (later.length) {   // delete after this process has exited. Paths are passed as arguments to a script file, never spliced into a command line.
     if (process.platform === 'win32') {
-      const bat = path.join(os.tmpdir(), 'pholama_cleanup_' + Date.now() + '.cmd');
-      fs.writeFileSync(bat, `@echo off\r\nping 127.0.0.1 -n 3 >nul\r\n${later.map(i => `rmdir /s /q "${i.path}"`).join('\r\n')}\r\ndel "%~f0"\r\n`);
-      spawn('cmd', ['/c', bat], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+      const list = path.join(os.tmpdir(), 'pholama_cleanup_' + Date.now() + '.txt');
+      const ps1 = path.join(os.tmpdir(), 'pholama_cleanup_' + Date.now() + '.ps1');
+      fs.writeFileSync(list, later.map(i => i.path).join('\r\n'), 'utf8');
+      fs.writeFileSync(ps1, "Start-Sleep -Seconds 3\r\nGet-Content -LiteralPath '" + list.replace(/'/g, "''") + "' | ForEach-Object { if ($_ -and (Test-Path -LiteralPath $_)) { for ($i=0;$i -lt 5;$i++) { Remove-Item -LiteralPath $_ -Recurse -Force -ErrorAction SilentlyContinue; if (-not (Test-Path -LiteralPath $_)) { break }; Start-Sleep -Seconds 2 } } }\r\nRemove-Item -LiteralPath '" + list.replace(/'/g, "''") + "' -Force -ErrorAction SilentlyContinue\r\nRemove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue\r\n", 'utf8');
+      spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-File', ps1], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
       log('\n' + C.green('Pholama is removed.') + ' The last folder is deleted a moment after this window closes.');
     } else {
-      spawn('sh', ['-c', 'sleep 1; exec rm -rf -- "$@"', 'sh', ...later.map(i => i.path)], { detached: true, stdio: 'ignore' }).unref();   // paths are arguments, never spliced into a shell string
+      spawn('sh', ['-c', 'sleep 1; exec rm -rf -- "$@"', 'sh', ...later.map(i => i.path)], { detached: true, stdio: 'ignore' }).unref();
       log('\n' + C.green('Pholama is removed.'));
     }
-  } else log('\n' + C.green('Pholama is removed.') + ' Thanks for trying it.');
+    return stop.failed.length ? 2 : 0;
+  }
+  if (stop.failed.length) { log('\n' + C.yellow('Pholama is removed, but ' + stop.failed.length + ' program(s) could not be stopped. Close them in Task Manager.')); return 2; }
+  log('\n' + C.green('Pholama is removed.') + ' Thanks for trying it.');
   return 0;
 }
 
-module.exports = { run, plan, isPholamaApp, isPholamaData, human };
+module.exports = { run, plan, isPholamaApp, isPholamaData, isPholamaDataDir, human };
