@@ -8,7 +8,11 @@
 // A model can never reach step 5 by skipping 1 to 4.
 const T = require('./codebase-tools');
 
-const MAX_STEPS = 40;            // hard stop so a confused model cannot loop forever
+const MAX_STEPS = 100000;        // not a real limit: a run ends by credits, the time limit, the stuck detector or the Stop button
+const DEFAULT_MAX_MINUTES = 45;  // a long build may run this long; the user can raise it for a run
+const HARD_MAX_MINUTES = 240;    // nobody can set it higher than 4 hours
+const KEEP_RECENT = 14;          // newest messages kept word for word when the history is compacted
+const COMPACT_AT_CHARS = 36000;  // about 9k tokens: compact before the model's window fills up
 const MAX_RESULT = 6000;         // characters of a tool result given back to the model
 const MAX_SAME = 3;              // the same refused call this many times in a row stops the run
 const TOOL_RE = /<tool>\s*(\{[\s\S]*?\})\s*<\/tool>/;
@@ -21,8 +25,20 @@ RULES
 - If a screenshot shows an error page, a frozen window or a site that will not load, close that window yourself, then try one alternative.
 - Only close windows you opened. Pick the title exactly from OPEN WINDOWS.
 - Prefer pull_file, fix the copy, then push_files_to_pc, over editing the user's file in place.
+- There is NO limit on how big a project or file can be. Write big files in parts: edit_file with append:true adds to the end of a file, so write the first part, then append the next parts, each part up to about 300 lines.
+- Build the whole thing, not a small demo. Keep going until the task is truly finished and checked, then call done.
+- Look at your work: read files back with pull_file and take screenshot_ to check the result before you say done.
 - When everything is finished call {"name":"done","summary":"..."}.
 TOOLS: ` + T.list().map(t => t.name).join(', ') + ', done';
+
+// Keeps the system prompt, the task, a running summary and the newest messages. The notes the agent wrote are never dropped: they are its memory.
+function compact(msgs, notes) {
+  const size = m => m.reduce((n, x) => n + String(x.content).length, 0);
+  if (size(msgs) <= COMPACT_AT_CHARS || msgs.length <= KEEP_RECENT + 3) return msgs;
+  const head = msgs.slice(0, 2), tail = msgs.slice(-KEEP_RECENT), dropped = msgs.length - head.length - tail.length;
+  const memo = 'EARLIER WORK (' + dropped + ' older messages were shortened to save space). Your notes so far:\n' + (notes.length ? notes.slice(-12).map((n, i) => '- ' + n).join('\n') : '(no notes yet)');
+  return [...head, { role: 'user', content: memo }, ...tail];
+}
 
 function parse(text) {
   const m = TOOL_RE.exec(String(text || ''));
@@ -33,17 +49,20 @@ function parse(text) {
 // deps: { model(messages) -> text, tools{name:async(args)->string}, ask(req)->{allowed,callId}, budget{gate(),spend(n)}, emit(event), now() }
 async function run(task, deps) {
   const { model, tools, ask, budget, emit = () => {}, now = Date.now } = deps;
+  const minutes = Math.min(HARD_MAX_MINUTES, Math.max(1, Number(deps.maxMinutes) || DEFAULT_MAX_MINUTES)), startedAt = now(), deadline = startedAt + minutes * 60000;
+  const notes = [];
   const msgs = [{ role: 'system', content: SYSTEM }, { role: 'user', content: String(task || '') }];
   const mem = { lastNoteAt: 0, lastEditAt: 0, taskId: 1, noteTaskId: 0 };
   let seq = 0, tick = 0, lastRefused = '', sameCount = 0, spent = 0;
   const log = (kind, data) => emit({ kind, at: now(), ...data });
 
   for (let step = 1; step <= MAX_STEPS; step++) {
+    if (now() >= deadline) { log('stopped', { reason: 'time', say: 'Reached the time limit for this run (' + minutes + ' minutes). Everything done so far is saved. Start another run to continue.' }); return { ok: false, stopped: 'time', steps: step - 1, spent }; }
     const g = budget.gate();
     if (g && g.ok === false) { log('stopped', { reason: 'budget', say: g.say || 'Out of credits for now.' }); return { ok: false, stopped: 'budget', steps: step - 1, spent }; }
 
     let text;
-    try { text = await model(msgs); } catch (e) { log('stopped', { reason: 'model', say: 'The model could not answer. Try again in a moment.' }); return { ok: false, stopped: 'model', steps: step - 1, spent }; }   // no provider details to the user
+    try { msgs.splice(0, msgs.length, ...compact(msgs, notes)); text = await model(msgs); } catch (e) { log('stopped', { reason: 'model', say: 'The model could not answer. Try again in a moment.' }); return { ok: false, stopped: 'model', steps: step - 1, spent }; }   // no provider details to the user
     const call = parse(text);
     if (!call) { log('retry', { step, say: 'The model did not pick a tool; asking again.' }); msgs.push({ role: 'assistant', content: String(text || '').slice(0, 500) }, { role: 'user', content: 'Reply with exactly one <tool>{"name":...}</tool> line.' }); continue; }
     msgs.push({ role: 'assistant', content: '<tool>' + JSON.stringify(call) + '</tool>' });
@@ -84,7 +103,7 @@ async function run(task, deps) {
     let result;
     try { result = await tools[name](args); } catch (e) { result = 'ERROR: ' + String(e && e.message || e).slice(0, 200); }
     tick = now();
-    if (name === 'note_') { mem.lastNoteAt = tick; mem.noteTaskId = mem.taskId; }
+    if (name === 'note_') { mem.lastNoteAt = tick; mem.noteTaskId = mem.taskId; notes.push(String(args.text || '').slice(0, 300)); if (notes.length > 40) notes.shift(); }
     if (name === 'next_task') mem.taskId++;   // the LOOP counts tasks, so the model cannot skip the note by leaving a flag out
     if (T.isEditing(name)) mem.lastEditAt = tick;
     if (meta.cost) { const sp = budget.spend(meta.cost); spent += meta.cost; if (sp && sp.ok === false) { log('stopped', { reason: 'budget', say: 'Out of credits for now.' }); return { ok: false, stopped: 'budget', steps: step, spent }; } }
@@ -99,4 +118,4 @@ async function run(task, deps) {
   return { ok: false, stopped: 'steps', steps: MAX_STEPS, spent };
 }
 
-module.exports = { run, parse, SYSTEM, MAX_STEPS, MAX_SAME };
+module.exports = { run, parse, compact, SYSTEM, MAX_STEPS, MAX_SAME, DEFAULT_MAX_MINUTES, HARD_MAX_MINUTES, KEEP_RECENT, COMPACT_AT_CHARS };

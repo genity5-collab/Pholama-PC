@@ -29,6 +29,9 @@ Write-Output "closed $n window(s) titled '$t'"`,
   write: `
 $d=Split-Path -Parent $env:PH_A; if($d -and -not (Test-Path -LiteralPath $d)){ throw 'The folder does not exist.' }
 [System.IO.File]::WriteAllText($env:PH_A,[Console]::In.ReadToEnd(),(New-Object System.Text.UTF8Encoding $false)); Write-Output "wrote"`,
+  append: `
+$d=Split-Path -Parent $env:PH_A; if($d -and -not (Test-Path -LiteralPath $d)){ throw 'The folder does not exist.' }
+[System.IO.File]::AppendAllText($env:PH_A,[Console]::In.ReadToEnd(),(New-Object System.Text.UTF8Encoding $false)); Write-Output "added to the end of the file"`,
   create_file: `
 if(Test-Path -LiteralPath $env:PH_A){ throw 'That file already exists.' }
 [System.IO.File]::WriteAllText($env:PH_A,[Console]::In.ReadToEnd(),(New-Object System.Text.UTF8Encoding $false)); Write-Output "created"`,
@@ -101,7 +104,7 @@ async function execute(pl, ctx = {}) {
       return { ok: true, text: say + '\nOPEN WINDOWS (opened by the agent, closable): ' + JSON.stringify(titles) };
     }
     case 'pull': return ps('read', { a: pl.from });
-    case 'write': return ps('write', { a: pl.path, stdin: pl.content });
+    case 'write': return ps(pl.append ? 'append' : 'write', { a: pl.path, stdin: pl.content });
     case 'create': return pl.type === 'folder' ? ps('create_folder', { a: pl.path }) : ps('create_file', { a: pl.path, stdin: pl.content });
     case 'move': return ps('move', { a: pl.from, b: pl.to });
     case 'delete': return ps('delete', { a: pl.path });

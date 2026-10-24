@@ -24,6 +24,10 @@ const ok = (n, c) => { if (c) { pass++; console.log('PASS ' + n); } else { fail+
   ok('delete uses -LiteralPath (no wildcard expansion of the path)', /-LiteralPath \$env:PH_A/.test(W.PS.delete));
   ok('move uses -LiteralPath', /Move-Item -LiteralPath/.test(W.PS.move));
   ok('write will not create missing folders', /does not exist/.test(W.PS.write));
+  ok('append adds to the end and never replaces', /AppendAllText/.test(W.PS.append) && !/WriteAllText/.test(W.PS.append));
+  ok('append will not create missing folders', /does not exist/.test(W.PS.append));
+  ok('write replaces and never appends', /WriteAllText/.test(W.PS.write) && !/AppendAllText/.test(W.PS.write));
+  ok('an append plan runs the append script, a plain one the write script', /pl\.append \? 'append' : 'write'/.test(SRC));
   ok('create refuses to overwrite', /already exists/.test(W.PS.create_file));
   ok('move refuses to overwrite', /already exists/.test(W.PS.move));
   ok('close matches the exact title only (-eq, not -like)', /MainWindowTitle -eq \$t/.test(W.PS.close) && !/-like|-match/.test(W.PS.close));

@@ -100,10 +100,60 @@ function rig(script, o = {}) {
   ok('secrets in a screenshot reading are hidden', r.events.every(e => !JSON.stringify(e).includes('ghp_')));
   ok('secrets in the final summary are hidden', !out.summary.includes('github_pat_') && !r.events.some(e => JSON.stringify(e).includes('github_pat_')));
 
-  // 14. the step limit
-  r = rig(Array.from({ length: 60 }, (_, i) => tool({ name: i % 2 ? 'screenshot_' : 'cloud_browse' })));
-  out = await L.run('x', r.deps);
-  ok('the step limit stops a run that never finishes', out.stopped === 'steps' && out.steps === L.MAX_STEPS);
+  // 14. long runs: no small step cap; a run ends by credits, time, being stuck, or Stop
+  ok('there is no small step cap (a real build needs hundreds of steps)', L.MAX_STEPS >= 10000);
+  {
+    const N = 300, script = [tool({ name: 'note_', text: 'plan' })]; for (let i = 0; i < N; i++) script.push(tool({ name: i % 2 ? 'screenshot_' : 'cloud_browse' })); script.push(tool({ name: 'done', summary: 'built it' }));
+    r = rig(script); out = await L.run('big build', { ...r.deps, maxMinutes: 240 });
+    ok('300 steps then done finishes normally', out.ok === true && out.steps === N + 2 && out.summary === 'built it');
+  }
+  // time limit: a clock we control
+  const clockRig = (script, startMs, tickMs) => { const r2 = rig(script); let t = startMs; r2.deps.now = () => (t += tickMs); return r2; };
+  r = clockRig(Array.from({ length: 50 }, () => tool({ name: 'cloud_browse' })), 0, 60000);   // each call takes a minute
+  out = await L.run('slow', { ...r.deps, maxMinutes: 5 });
+  ok('a run that is too slow stops at its time limit', out.ok === false && out.stopped === 'time');
+  ok('the time stop is explained and says work is saved', r.events.some(e => e.kind === 'stopped' && e.reason === 'time' && /saved/.test(e.say) && /5 minutes/.test(e.say)));
+  ok('it did real work before stopping (not zero steps)', out.steps >= 1 && out.steps < 50);
+  r = clockRig([tool({ name: 'done', summary: 's' })], 0, 1000);
+  out = await L.run('quick', { ...r.deps, maxMinutes: 5 }); ok('a quick run is not affected by the limit', out.ok === true);
+  r = clockRig(Array.from({ length: 400 }, () => tool({ name: 'cloud_browse' })), 0, 60000);
+  out = await L.run('x', { ...r.deps, maxMinutes: 100000 });
+  ok('nobody can set the limit above the 4 hour hard maximum', out.stopped === 'time' && /240 minutes/.test(r.events.find(e => e.kind === 'stopped').say) && L.HARD_MAX_MINUTES === 240);
+  for (const bad of [0, -5, NaN, 'abc', null, undefined, {}]) { r = clockRig([tool({ name: 'done', summary: 's' })], 0, 1000); out = await L.run('x', { ...r.deps, maxMinutes: bad }); ok('a junk time limit falls back to the default: ' + JSON.stringify(bad), out.ok === true); }
+  {
+    let clock = 0; r = rig(Array.from({ length: 400 }, () => tool({ name: 'cloud_browse' }))); r.deps.now = () => (clock += 60000);
+    out = await L.run('x', r.deps);
+    const stopEvent = r.events.find(e => e.kind === 'stopped');
+    ok('the default time limit is 45 minutes', out.stopped === 'time' && /45 minutes/.test(stopEvent.say) && L.DEFAULT_MAX_MINUTES === 45);
+    ok('it stopped no earlier than 45 minutes and not long after', clock / 60000 >= 45 && clock / 60000 <= 45 + 6);
+  }
+  // the budget and the stuck detector still end a runaway
+  r = rig(Array.from({ length: 10 }, () => tool({ name: 'nonexistent_tool' }))); out = await L.run('x', r.deps);
+  ok('a model that keeps calling a missing tool is stopped as stuck', out.stopped === 'stuck');
+  r = rig(Array.from({ length: 50 }, () => tool({ name: 'cloud_browse' })), { noBudget: true }); out = await L.run('x', r.deps);
+  ok('no credits stops the run before any model call', out.stopped === 'budget' && r.calls() === 0);
+
+  // 14b. compaction keeps the context small and keeps the agent's notes
+  const big = n => Array.from({ length: n }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: 'm' + i + ' ' + 'x'.repeat(2000) }));
+  const base = [{ role: 'system', content: 'SYS' }, { role: 'user', content: 'TASK' }, ...big(40)];
+  const notes = ['plan the menu', 'menu done, next the cart'];
+  let c = L.compact(base, notes);
+  ok('a long history is compacted', c.length < base.length && JSON.stringify(c).length < JSON.stringify(base).length / 2);
+  ok('compaction keeps the system prompt and the task first', c[0].content === 'SYS' && c[1].content === 'TASK');
+  ok('compaction keeps the newest messages word for word', c.slice(-L.KEEP_RECENT).every((m, i) => m.content === base[base.length - L.KEEP_RECENT + i].content));
+  ok('compaction keeps the notes', c.some(m => /plan the menu/.test(m.content) && /menu done, next the cart/.test(m.content)));
+  ok('compaction says how much it shortened', c.some(m => /older messages were shortened/.test(m.content)));
+  const small = [{ role: 'system', content: 'S' }, { role: 'user', content: 'T' }, ...big(3).map(m => ({ ...m, content: 'short' }))];
+  ok('a short history is left alone', L.compact(small, notes) === small);
+  ok('compaction with no notes still works', L.compact(base, []).some(m => /no notes yet/.test(m.content)));
+  ok('only the last 12 notes are carried', L.compact(base, Array.from({ length: 30 }, (_, i) => 'note' + i)).some(m => /note29/.test(m.content) && !/note0\b/.test(m.content)));
+  {
+    const seen = []; r = rig([tool({ name: 'note_', text: 'first plan' }), ...Array.from({ length: 30 }, () => tool({ name: 'cloud_browse' })), tool({ name: 'done', summary: 'ok' })]);
+    r.deps.tools.cloud_browse = async () => 'y'.repeat(5000); const origModel = r.deps.model; r.deps.model = async m => { seen.push(JSON.stringify(m).length); return origModel(m); };
+    out = await L.run('long', { ...r.deps, maxMinutes: 240 });
+    ok('a long run finishes', out.ok === true);
+    ok('the history sent to the model never grows past the limit', Math.max(...seen) < L.COMPACT_AT_CHARS + 3 * 6200 + 4000);
+  }
 
   // 15. parser
   ok('parser: plain', L.parse('<tool>{"name":"a"}</tool>').name === 'a');

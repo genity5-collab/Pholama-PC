@@ -4,7 +4,7 @@
 const path = require('path');
 const grants = require('./codebase-grants');
 
-const MAX_TEXT = 20000, MAX_CMD = 2000, MAX_TITLE = 200;
+const MAX_TEXT = 20000, MAX_CMD = 2000, MAX_TITLE = 200, MAX_PART = 60000;
 const isStr = v => typeof v === 'string';
 const no = say => ({ ok: false, say });
 
@@ -48,8 +48,10 @@ const PLANNERS = {
   edit_file(a) {
     const r = needPath(a, 'path', 'write'); if (!r.ok) return r;
     if (!isStr(a.content)) return no('edit_file needs the new content.');
-    if (a.content.length > MAX_TEXT * 5) return no('That file is too large to write in one step.');
-    return { ok: true, kind: 'write', path: r.p, content: a.content };
+    if (a.append !== undefined && typeof a.append !== 'boolean') return no('append must be true or false.');
+    // One call carries one part. A file of any size is written as several parts (append:true), so there is no limit on the whole file.
+    if (a.content.length > MAX_PART) return no('That part is too long for one step (max ' + MAX_PART + ' characters). Write it in smaller parts with append:true.');
+    return { ok: true, kind: 'write', path: r.p, content: a.content, append: a.append === true };
   },
   push_files_to_pc(a) {
     const r = needPath(a, 'to', 'write'); if (!r.ok) return r;

@@ -84,6 +84,21 @@ ok('bad args shapes do not crash', [null, undefined, 5, 'x', [], true].every(a =
 ok('note needs text', P.plan('note_', { text: 'plan' }).ok && !P.plan('note_', {}).ok && !P.plan('note_', { text: '  ' }).ok);
 ok('psq quotes safely', P.psq("it's") === "'it''s'" && P.psq("a'; X; '") === "'a''; X; '''");
 
+// 9b. no limit on a whole file: it is written in parts
+{
+  const f = J(proj, 'big.js');
+  ok('append:true is planned as an append', P.plan('edit_file', { path: f, content: 'part2', append: true }).append === true);
+  ok('without append it replaces the file', P.plan('edit_file', { path: f, content: 'x' }).append === false && P.plan('edit_file', { path: f, content: 'x', append: false }).append === false);
+  for (const bad of ['true', 1, 0, 'yes', {}, [], null]) ok('append must be a real boolean: ' + JSON.stringify(bad), P.plan('edit_file', { path: f, content: 'x', append: bad }).ok === false);
+  ok('one part may be up to 60,000 characters', P.plan('edit_file', { path: f, content: 'x'.repeat(60000), append: true }).ok === true);
+  const over = P.plan('edit_file', { path: f, content: 'x'.repeat(60001), append: true });
+  ok('a longer part is refused and the agent is told to use parts', over.ok === false && /smaller parts/.test(over.say));
+  ok('appending outside every grant is refused', P.plan('edit_file', { path: J(other, 'secret.txt'), content: 'n', append: true }).ok === false);
+  ok('appending to a read-only grant is refused', P.plan('edit_file', { path: J(ro, 'r.txt'), content: 'n', append: true }).ok === false);
+  const parts = Array.from({ length: 50 }, (_, i) => P.plan('edit_file', { path: f, content: 'line\n'.repeat(1000), append: i > 0 }));
+  ok('50 parts of 1,000 lines (50,000 lines in all) are accepted', parts.every(q => q.ok) && parts[0].append === false && parts.slice(1).every(q => q.append === true));
+}
+
 // 10. GitHub goes through the typed module: the old free-text form is gone
 ok('free-text github_write is refused', P.plan('github_write', { what: 'push everything to main' }).ok === false);
 ok('free-text github_read is refused', P.plan('github_read', { what: 'read the secrets' }).ok === false);
