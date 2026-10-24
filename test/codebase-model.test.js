@@ -38,6 +38,7 @@ const MSGS = [{ role: 'system', content: 'RULES' }, { role: 'user', content: 'fi
   ok('it goes to the cloud function address', /pholamaCloud$/.test(c.calls[0].url));
   ok('a custom address is respected (tests, self-hosting)', await (async () => { const k = cloud(OK); await M.ask({ token: 't', messages: MSGS, fetchFn: k.fetchFn, url: 'http://x/y' }); return k.calls[0].url === 'http://x/y'; })());
   ok('no PC folder names, grants or files are sent beyond the messages', Object.keys(b).sort().join() === 'codebase,effort,localTools,messages,model,studio');
+  ok('a Quick call adds exactly one field: quick', await (async () => { const k = cloud(OK); await M.ask({ token: 't', messages: MSGS, kind: 'quick', fetchFn: k.fetchFn }); return Object.keys(k.calls[0].body).sort().join() === 'codebase,effort,localTools,messages,model,quick,studio'; })());
 
   // ---- billing: only the person's words are billed ----
   const long = [{ role: 'system', content: 'R' }, { role: 'user', content: 'build a shop' }, { role: 'assistant', content: '<tool>{"name":"note_","text":"plan"}</tool>' }, { role: 'user', content: 'RESULT: ' + 'word '.repeat(900) }];

@@ -12,7 +12,9 @@ const MAX_STEPS = 100000;        // not a real limit: a run ends by credits, the
 const DEFAULT_MAX_MINUTES = 45;  // a long build may run this long; the user can raise it for a run
 const HARD_MAX_MINUTES = 240;    // nobody can set it higher than 4 hours
 const LOGIN_WAIT_MS = 6000;   // after a login error, wait this long for the page to hand over a fresh one
-const RETRY_WAITS = [1000, 3000, 8000];   // pauses before the 2nd, 3rd and 4th try of one model call
+const CHATBOX_EVERY_MS = 60000;   // about every minute of work the agent is reminded to look at the chatbox
+const HEARTBEAT_MS = 8000;   // while the model thinks, the page is told how long it has been, so a big job never looks frozen
+const RETRY_WAITS = [1000, 2000, 4000];   // pauses before the 2nd, 3rd and 4th try of one model call
 const KEEP_RECENT = 14;          // newest messages kept word for word when the history is compacted
 const COMPACT_AT_CHARS = 36000;  // about 9k tokens: compact before the model's window fills up
 const MAX_RESULT = 6000;         // characters of a tool result given back to the model
@@ -43,7 +45,7 @@ EXAMPLES (copy the shape exactly; one line, double quotes):
 <tool>{"name":"pull_file","path":"C:\\folder\\a.js"}</tool>
 <tool>{"name":"edit_file","path":"C:\\folder\\a.js","content":"whole new file text"}</tool>
 <tool>{"name":"create_item","path":"C:\\folder\\new.txt","content":"text"}</tool>
-<tool>{"name":"user_pc","action":"click","x":400,"y":300}</tool>
+<tool>{"name":"user_pc","action":"click","fx":0.5,"fy":0.4}</tool>   (fx, fy = how far across and down the screen, 0 to 1. Or x,y in real pixels. The screenshot tells you the real screen size.)
 <tool>{"name":"user_pc","action":"search","text":"best pizza near me"}</tool>
 <tool>{"name":"user_pc","action":"type","text":"hello world"}</tool>
 <tool>{"name":"user_pc","action":"key","key":"enter"}</tool>
@@ -51,6 +53,8 @@ To SEARCH the web use action "search" (it opens the results). To type into a pag
 More user_pc actions: "double_click" and "right_click" (with x,y), "move" (x,y), "scroll" (amount: negative = down, up to 20), and "wait" (seconds 1 to 20, so a page can load). Take a screenshot after a click or wait to check it worked.
 <tool>{"name":"cloud_browse","url":"https://example.com"}</tool>
 <tool>{"name":"done","summary":"what you did"}</tool>
+CHATBOX: the person can type to you while you work. Call {"name":"check_chatbox_pholama"} about every minute of work, after a big step, and before you say done. If it shows a message, answer it in a note and change course. Messages that arrive are also handed to you at the start of a turn.
+CURSOR: you cannot see the screen unless you take a screenshot. Never guess where something is. Take a screenshot_ FIRST, read the position from it, click, then take a screenshot again to check the click did what you wanted. Prefer keyboard keys (tab, enter, ctrl+l) and "search" over clicking when they do the same job.
 To open a website for the user use pc_browse with a full https address. Never answer with plain text, always one <tool> line.
 TOOLS: ` + T.list().map(t => t.name).join(', ') + ', done';
 
@@ -94,6 +98,7 @@ async function run(task, deps) {
   const memo = typeof deps.context === 'string' && deps.context ? deps.context + '\n\n' : '';   // what the agent remembers from earlier runs
   const msgs = [{ role: 'system', content: SYSTEM }, { role: 'user', content: memo + 'TASK: ' + String(task || '') }];
   const mem = { lastNoteAt: 0, lastEditAt: 0, taskId: 1, noteTaskId: 0 };
+  let lastChatCheck = now();
   let seq = 0, tick = 0, lastRefused = '', sameCount = 0, spent = 0, misses = 0, badCount = 0, lastBad = '', lastSig = '', repeatCount = 0;
   const log = (kind, data) => emit({ kind, at: now(), ...data });
 
@@ -103,6 +108,16 @@ async function run(task, deps) {
     const g = budget.gate();
     if (g && g.ok === false) { log('stopped', { reason: 'budget', say: g.say || 'Out of credits for now.' }); return { ok: false, stopped: 'budget', steps: step - 1, spent }; }
 
+    // The person may have typed something while the agent was busy: hand it over now, so a new message is never missed.
+    if (deps.inbox && deps.inbox.unread() > 0) {
+      const said = deps.inbox.take();
+      msgs.push({ role: 'user', content: 'RESULT: ' + require('./codebase-inbox').describe(said) });
+      log('chatbox', { step, say: said.length === 1 ? 'The agent noticed your new message.' : 'The agent noticed ' + said.length + ' new messages.' });
+      lastChatCheck = now();
+    } else if (deps.inbox && now() - lastChatCheck >= CHATBOX_EVERY_MS) {
+      lastChatCheck = now();
+      msgs.push({ role: 'user', content: 'RESULT: A minute of work has passed. Call check_chatbox_pholama now to see whether the person wrote anything new.' });
+    }
     let text;
     {
       // A model hiccup (busy server, dropped connection, empty reply) is retried a few times with a short wait, so one bad moment does not end a long job.
@@ -110,7 +125,8 @@ async function run(task, deps) {
       let err = null, loginRetried = false;
       for (let attempt = 0; attempt <= RETRY_WAITS.length; attempt++) {
         if (deps.signal && deps.signal.aborted) { log('stopped', { reason: 'stop', say: 'Stopped.' }); return { ok: false, stopped: 'stop', steps: step - 1, spent }; }
-        try { msgs.splice(0, msgs.length, ...compact(msgs, notes, attempt)); text = await model(msgs, deps.signal); err = null; break; } catch (e) { err = e; }
+        const t0 = now(); const hb = setInterval(() => { try { log('thinking', { step, secs: Math.round((now() - t0) / 1000), say: 'Thinking... ' + Math.round((now() - t0) / 1000) + 's' }); } catch {} }, deps.heartbeatMs || HEARTBEAT_MS); if (hb.unref) hb.unref();
+        try { msgs.splice(0, msgs.length, ...compact(msgs, notes, attempt)); text = await model(msgs, deps.signal); err = null; break; } catch (e) { err = e; } finally { clearInterval(hb); }
         const kind = err && err.plain ? err.kind : 'busy';
         if (kind === 'login' && !loginRetried) {   // the login may just have expired: the page sends a fresh one while we wait, so try once more
           loginRetried = true; log('retry', { step, say: 'Refreshing your sign-in...' });
@@ -118,7 +134,7 @@ async function run(task, deps) {
         }
         if (kind !== 'busy' && kind !== 'network') break;
         if (attempt < RETRY_WAITS.length) {
-          log('retry', { step, say: 'The AI is slow right now. Trying again (' + (attempt + 1) + ' of ' + RETRY_WAITS.length + ')...' });
+          log('retry', { step, say: 'That step is taking longer than usual. Trying again with a lighter request (' + (attempt + 1) + ' of ' + RETRY_WAITS.length + ')...' });
           await (deps.sleep || (ms => new Promise(r => setTimeout(r, ms))))(RETRY_WAITS[attempt]);
         }
       }

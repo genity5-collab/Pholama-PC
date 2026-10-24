@@ -10,6 +10,11 @@ const TIMEOUT_MS = 60000, MAX_OUT = 20000;
 // ---- fixed PowerShell scripts. $env:PH_A / PH_B / PH_N hold the data. ----
 const PS = {
   screenshot: `
+Add-Type @"
+using System.Runtime.InteropServices;
+public class PhDpi { [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); }
+"@
+[void][PhDpi]::SetProcessDPIAware()
 Add-Type -AssemblyName System.Windows.Forms,System.Drawing
 $b=[System.Windows.Forms.SystemInformation]::VirtualScreen
 $s=[double]$env:PH_N; if($s -le 0 -or $s -gt 1){$s=0.5}
@@ -18,7 +23,7 @@ $g=[System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Location,[Sy
 $w=[int]($b.Width*$s); $h=[int]($b.Height*$s)
 $small=New-Object System.Drawing.Bitmap $bmp,$w,$h
 $small.Save($env:PH_A,[System.Drawing.Imaging.ImageFormat]::Png); $small.Dispose(); $bmp.Dispose()
-Write-Output "saved"`,
+Write-Output ("saved " + $b.Left + " " + $b.Top + " " + $b.Width + " " + $b.Height)`,
   windows: `
 Get-Process | Where-Object { $_.MainWindowTitle } | ForEach-Object { $_.MainWindowTitle } | Sort-Object -Unique`,
   open: `
@@ -60,6 +65,11 @@ Add-Type @"
 using System; using System.Runtime.InteropServices;
 public class PhMouse { [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y); [DllImport("user32.dll")] public static extern void mouse_event(uint f,uint dx,uint dy,int d,UIntPtr e); }
 "@
+Add-Type @"
+using System.Runtime.InteropServices;
+public class PhDpi2 { [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); }
+"@
+[void][PhDpi2]::SetProcessDPIAware()
 $x=[int]$env:PH_A; $y=[int]$env:PH_B; $do=[string]$env:PH_N
 Add-Type -AssemblyName System.Windows.Forms
 $v=[System.Windows.Forms.SystemInformation]::VirtualScreen
@@ -117,6 +127,14 @@ function shell(kind, command, cwd) {
 }
 
 // Execute a PLAN from codebase-plan.js. Returns text for the model. `ctx` holds things only the app knows (the screenshot reader, the notes, the windows the agent opened).
+let SCREEN = null;   // the real screen size from the last screenshot: fractions (fx, fy) are turned into pixels with it
+// A fraction of the screen (0 to 1) becomes a real pixel. Without a screenshot first there is no size, so the agent is told to take one.
+function pointOf(pl) {
+  if (pl.fx == null) return { x: pl.x, y: pl.y };
+  if (!SCREEN) return null;
+  return { x: Math.round(SCREEN.left + pl.fx * (SCREEN.w - 1)), y: Math.round(SCREEN.top + pl.fy * (SCREEN.h - 1)) };
+}
+const NEED_SHOT = { ok: false, text: 'ERROR: take a screenshot_ first so the screen size is known, then click with fx and fy.' };
 async function execute(pl, ctx = {}) {
   if (!pl || pl.ok !== true) return { ok: false, text: (pl && pl.say) || 'Not allowed.' };
   switch (pl.kind) {
@@ -127,6 +145,8 @@ async function execute(pl, ctx = {}) {
       let say = 'Screenshot taken.', shot = null;
       try { try { shot = require('./codebase-shots').put(fs.readFileSync(f)); } catch {} if (ctx.readImage) say = await ctx.readImage(f); } finally { try { fs.unlinkSync(f); } catch {} }
       const w = await ps('windows'); const titles = w.ok ? w.text.split(/\r?\n/).filter(Boolean).filter(t => !ctx.opened || ctx.opened.has(t)) : [];
+      const dim = /saved\s+(-?\d+)\s+(-?\d+)\s+(\d+)\s+(\d+)/.exec(String(r.text || ''));
+      if (dim) { SCREEN = { left: +dim[1], top: +dim[2], w: +dim[3], h: +dim[4] }; say += '\nSCREEN: ' + dim[3] + ' wide by ' + dim[4] + ' high (real pixels). Click with x,y in these pixels, or with fx,fy as a fraction 0 to 1 of the screen (fx 0.5, fy 0.5 is the middle).'; }
       return { ok: true, shot, text: say + '\nOPEN WINDOWS (opened by the agent, closable): ' + JSON.stringify(titles) };
     }
     case 'pull': return ps('read', { a: pl.from });
@@ -143,11 +163,12 @@ async function execute(pl, ctx = {}) {
     case 'clip_set': return ps('clip_set', { stdin: pl.text });
     case 'paste': return ps('paste');
     case 'img_copy': return ps('img_copy', { a: pl.path });
-    case 'pc_move': return ps('pc_mouse', { a: pl.x, b: pl.y, n: 'move' });
-    case 'pc_click': return ps('pc_mouse', { a: pl.x, b: pl.y, n: 'click' });
-    case 'pc_double': return ps('pc_mouse', { a: pl.x, b: pl.y, n: 'double' });
-    case 'pc_right': return ps('pc_mouse', { a: pl.x, b: pl.y, n: 'right' });
-    case 'pc_scroll': return ps('pc_mouse', { a: pl.x, b: pl.y, n: 'scroll:' + pl.amount });
+    case 'pc_move': case 'pc_click': case 'pc_double': case 'pc_right': case 'pc_scroll': {
+      const pt = pointOf(pl); if (!pt) return NEED_SHOT;
+      const act = { pc_move: 'move', pc_click: 'click', pc_double: 'double', pc_right: 'right', pc_scroll: 'scroll:' + pl.amount }[pl.kind];
+      const r = await ps('pc_mouse', { a: pt.x, b: pt.y, n: act });
+      return r.ok && pt.x >= 0 ? { ...r, text: String(r.text || '').trim() + ' (at ' + pt.x + ',' + pt.y + ')' } : r;
+    }
     case 'pc_wait': return ps('pc_wait', { a: pl.seconds });
     case 'pc_type': return ps('pc_type', { stdin: pl.text, a: pl.enter ? '1' : '0' });
     case 'pc_key': return ps('pc_key', { a: pl.send });

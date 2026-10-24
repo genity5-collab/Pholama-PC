@@ -6,7 +6,7 @@
 //  * the cloud's real error text is NEVER shown: the person sees one plain sentence (the model name, HTTP codes and provider names stay in the log only)
 //  * stopping the run (abort) stops the request
 const FN_DEFAULT = process.env.PHOLAMA_CLOUD_URL || 'https://lyra-09dfabbf.base44.app/functions/pholamaCloud';
-const MODELS = Object.freeze({ simple: 'qwen-coder', hard: 'qwen3-coder' });
+const MODELS = Object.freeze({ simple: 'qwen-coder', hard: 'qwen3-coder', quick: 'qwen-coder' });   // quick = the same self-hosted coder, asked for short replies (see ask)
 const MARK = '\n\n[Studio]\n';
 const TIMEOUT_MS = 170000;
 const KEEP_OTHER = 40;   // the cloud keeps the last 12; sending more is wasted bytes, so the PC trims to a safe number first
@@ -21,7 +21,7 @@ const PLAIN = {
 const fail = (kind, code) => { const e = new Error(PLAIN[kind] || PLAIN.busy); e.kind = kind; e.code = code || kind; e.plain = true; return e; };
 
 // Picks the model. 'hard' (debugging, complex work) costs double; anything unknown falls back to the cheap coder, never to an unlisted model.
-function pickModel(kind) { return kind === 'hard' ? MODELS.hard : MODELS.simple; }
+function pickModel(kind) { return kind === 'hard' ? MODELS.hard : kind === 'quick' ? MODELS.quick : MODELS.simple; }
 
 // The cloud bills the words BEFORE the marker in the last user message. The agent's own text must therefore sit AFTER it.
 // A person-typed message (the task) has no marker added; a tool result gets the marker in front, so it is free.
@@ -52,7 +52,7 @@ async function ask(opts) {
   let r;
   try {
     r = await fetchFn(url, { method: 'POST', signal: sig, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tk },
-      body: JSON.stringify({ studio: true, codebase: true, model: pickModel(kind), effort: 'normal', localTools: false, messages: [{ role: 'system', content: sys }, ...msgs] }) });
+      body: JSON.stringify({ studio: true, codebase: true, model: pickModel(kind), effort: 'normal', ...(kind === 'quick' ? { quick: true } : {}), localTools: false, messages: [{ role: 'system', content: sys + (kind === 'quick' ? '\nQUICK MODE: the person is in a hurry. Answer with ONE short tool call and no explanation. Do small steps.' : '') }, ...msgs.slice(kind === 'quick' ? -16 : 0)] }) });
   } catch (e) {
     if (e && e.name === 'AbortError') throw fail('stopped', 'abort');
     log('codebase network error: ' + String(e && e.message || e).slice(0, 120)); throw fail('network');

@@ -99,6 +99,8 @@ const { spawn, spawnSync } = require('child_process'), http = require('http'), f
     require('../server/codebase-memory.js').saveSession({ task: 'Old job <b>x</b>', notes: [], result: { ok: true } });
     await ev(`(window.__s.open(), 1)`); await new Promise(r => setTimeout(r, 700));
     ok('an earlier session shows with its tick, and its text is not live HTML', (await ev(`document.querySelector('#cbsSess').textContent`)).includes('Old job <b>x</b>') && (await ev(`document.querySelector('#cbsSess').textContent`)).includes('\u2705') && (await ev(`document.querySelector('#cbsSess b')`)) === null);
+    ok('the page has a Quick option', (await ev(`[...document.querySelectorAll('#cbsKind option')].map(o => o.value).join()`)) === 'simple,hard,quick');
+    ok('the chat line starts closed (nothing is running)', (await ev(`document.querySelector('#cbsChat').disabled && document.querySelector('#cbsChatSend').disabled`)) === true);
     ok('the session shows its own name', (await ev(`document.querySelector('#cbsSess').textContent`)).includes('Old job'));
     require('../server/codebase-memory.js').clearSessions(); require('../server/codebase-memory.js').saveSession({ task: 'Named job', work: ['\u2705 edit_file one', '\u274C edit_file two: read-only'], result: { ok: true, summary: 'All done' } });
     await ev(`(window.__s.open(), 1)`); await new Promise(r => setTimeout(r, 700));

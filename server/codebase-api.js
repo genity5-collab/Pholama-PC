@@ -13,7 +13,7 @@ const MEM = require('./codebase-memory');
 
 const MAX_BODY = 64 * 1024;          // a task, an answer or a grant is small; a bigger body is refused before it is read in full
 const MAX_UPLOAD = 8 * 1024 * 1024;  // a screenshot or a picture the person attaches
-const KINDS = new Set(['simple', 'hard']);
+const KINDS = new Set(['simple', 'hard', 'quick']);
 
 function readBody(req, limit) {
   return new Promise(resolve => {
@@ -34,6 +34,7 @@ function buildTools(deps) {
       const pl = PLAN.plan(name, args);
       if (!pl || pl.ok !== true) return 'REFUSED: ' + ((pl && pl.say) || 'not allowed');
       if (pl.kind === 'next_task') return 'Next task started.';
+      if (pl.kind === 'chatbox') return INBOX.describe(inbox.take());
       if (pl.kind === 'remember') { const m = deps.memory || require('./codebase-memory'); const x = m.remember(pl.text); return x.ok ? x.text : 'ERROR: ' + x.text; }
       if (pl.kind === 'forget') { const m = deps.memory || require('./codebase-memory'); const x = m.forget(pl.id); return x.ok ? x.text : 'ERROR: ' + x.text; }
       if (pl.kind === 'note') { if (!deps.notepad) return 'Noted.'; const n = await deps.notepad.note(pl.text); return n.ok ? 'Noted.' + (n.live ? ' (shown in Notepad)' : '') : 'ERROR: ' + n.text; }
@@ -52,6 +53,7 @@ function buildTools(deps) {
 function create(deps) {
   const { grants, budget, now = Date.now, log = () => {}, fetchFn, cloudUrl } = deps;
   const state = { token: '', gh: '', kind: 'simple', credits: null };   // both tokens live in memory for ONE run only
+  const INBOX = require('./codebase-inbox'), inbox = deps.inbox || INBOX.create(now);   // what the person types while the agent works
   const model = MODEL.makeModel({ getToken: () => state.token, getKind: () => state.kind, fetchFn, url: cloudUrl, log, onCredits: c => { state.credits = c; } });
   const notepad = deps.notepad === undefined ? (deps.win ? require('./codebase-notepad').create({
     write: async (f, c) => { const r = await deps.win.execute({ ok: true, kind: 'write', path: f, content: c, append: false }, {}); if (!r.ok) throw new Error('write'); },
@@ -67,7 +69,7 @@ function create(deps) {
     checkLink: u => require('./sources').checkLink(u),
   });
   const tools = deps.tools || buildTools({ ...deps, media, web, notepad, getGithubToken: deps.getGithubToken || (() => state.gh) });
-  const session = SESSION.create({ model, tools, budget, now, sleep: deps.sleep, getContext: () => MEM.context(), onEnd: x => MEM.saveSession({ task: x.task, notes: x.notes, work: x.work, result: x.result, now }), onResult: r => { if (notepad && typeof notepad.mark === 'function') notepad.mark(r.good, r.what, r.detail).catch(() => {}); } });   // a tick or a cross for every step, written into the Notepad
+  const session = SESSION.create({ inbox, model, tools, budget, now, sleep: deps.sleep, getContext: () => MEM.context(), onEnd: x => MEM.saveSession({ task: x.task, notes: x.notes, work: x.work, result: x.result, now }), onResult: r => { if (notepad && typeof notepad.mark === 'function') notepad.mark(r.good, r.what, r.detail).catch(() => {}); } });   // a tick or a cross for every step, written into the Notepad
   // The login lives only as long as the run: when the run ends (done, stopped, out of time or credits) it is wiped.
   const wipeWhenDone = () => { const t = setInterval(() => { const st = session.state(); if (st.done || !st.running) { state.token = ''; state.gh = ''; if (notepad) notepad.finish().catch(() => {}); clearInterval(t); } }, 250); if (t.unref) t.unref(); };
 
@@ -132,6 +134,9 @@ function create(deps) {
         const r = session.answer(String(body.run || ''), String(body.call || ''), body.allow === true);
         send(res, r.ok ? 200 : 409, r.ok ? { ok: true } : { error: r.error }); return true;
       }
+      if (p === '/api/codebase/say' && method === 'POST') {   // a message typed while the agent is working
+        if (!session.state().running) { send(res, 409, { error: 'The agent is not running. Press Start to give it a task.' }); return true; }
+        const x = inbox.add(body.text); send(res, x.ok ? 200 : 400, x.ok ? { ok: true } : { error: x.error }); return true; }
       if (p === '/api/codebase/stop' && method === 'POST') { const r = session.stop(); state.token = ''; state.gh = ''; if (r.ok && notepad) notepad.finish().catch(() => {}); send(res, r.ok ? 200 : 409, r.ok ? { ok: true } : { error: r.error }); return true; }
       if (p === '/api/codebase/memory' && method === 'POST') { const x = MEM.remember(String(body.text || '')); send(res, x.ok ? 200 : 400, x.ok ? { ok: true, memory: MEM.listMemory() } : { error: x.text }); return true; }
       if (p === '/api/codebase/memory' && method === 'DELETE') { if (body.all === true) { MEM.clearMemory(); send(res, 200, { ok: true, memory: [] }); return true; } const x = MEM.forget(String(body.id || '')); send(res, x.ok ? 200 : 404, x.ok ? { ok: true, memory: MEM.listMemory() } : { error: x.text }); return true; }

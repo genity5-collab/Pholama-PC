@@ -78,3 +78,6 @@ body:not(.codebase-on) #cbUsage { display: none; }   /* shown only while the Cod
 
 .cbs-wl { flex-basis: 100%; margin: 6px 0 0; padding: 8px 10px; background: var(--card2); border: 1px solid var(--line, #3c3c3c); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; max-height: 260px; overflow: auto; }
 .cbs-wl[hidden] { display: none; }
+
+.cbs-chat { display: flex; gap: 6px; margin: 8px 0; }
+.cbs-chat input { flex: 1; min-width: 0; }

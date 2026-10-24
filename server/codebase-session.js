@@ -5,7 +5,7 @@ const loop = require('./codebase-loop');
 const MAX_EVENTS = 500, ASK_TIMEOUT_MS = 10 * 60 * 1000;
 
 function create(deps) {
-  const { model, tools, budget, now = Date.now, askTimeout = ASK_TIMEOUT_MS, sleep, onResult, getContext, onEnd } = deps;
+  const { model, tools, budget, now = Date.now, askTimeout = ASK_TIMEOUT_MS, sleep, onResult, getContext, onEnd, inbox } = deps;
   let run = null;   // { id, events[], waiters:Set, pending:Map(callId -> {resolve,timer,tool,level}), done, result, stop }
   let counter = 0;
 
@@ -32,7 +32,7 @@ function create(deps) {
       try { if (e && e.kind === 'tool' && e.tool && e.tool !== 'note_' && !/^(screenshot_|remember|forget|next_task)$/.test(e.tool)) { const bad = /^ERROR|refused|blocked/i.test(String(e.result || '')); workLog.push((bad ? '\u274C ' : '\u2705 ') + e.tool + ' ' + String(e.args || '').slice(0, 120) + (bad ? ': ' + String(e.result || '').slice(0, 100) : '')); } } catch {}
       if (e && e.kind === 'tool' && e.tool === 'note_') { try { noteLog.push(String(JSON.parse(e.args).text || e.args)); } catch { noteLog.push(String(e.args || '')); } } push(r, e); };
     const guardedBudget = { gate: () => (r.stopped ? { ok: false, say: 'Stopped.' } : budget.gate()), spend: n => budget.spend(n) };
-    loop.run(text, { model, tools, ask, budget: guardedBudget, emit, now, signal: ac.signal, sleep, onResult, context: typeof getContext === 'function' ? (() => { try { return getContext(); } catch { return ''; } })() : '', maxMinutes: Number(opts && opts.maxMinutes) || undefined }).then(res => { r.result = res; }, () => { r.result = { ok: false, stopped: 'error' }; }).then(() => {
+    loop.run(text, { inbox, model, tools, ask, budget: guardedBudget, emit, now, signal: ac.signal, sleep, onResult, context: typeof getContext === 'function' ? (() => { try { return getContext(); } catch { return ''; } })() : '', maxMinutes: Number(opts && opts.maxMinutes) || undefined }).then(res => { r.result = res; }, () => { r.result = { ok: false, stopped: 'error' }; }).then(() => {
       r.done = true; for (const p of r.pending.values()) { clearTimeout(p.timer); p.resolve({ allowed: false }); } r.pending.clear();
       if (typeof onEnd === 'function') { try { onEnd({ task: text, notes: noteLog, work: workLog, result: r.result }); } catch {} }   // save the session; a problem here never changes how the run ended
       push(r, { kind: 'end', at: now(), ok: !!(r.result && r.result.ok) });

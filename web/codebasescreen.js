@@ -19,9 +19,12 @@ export function describe(e) {
       return { tone: bad ? 'bad' : 'ok', mark: bad ? 'x' : 'ok', tag: 'TOOL', text: tool + (e.args ? ' ' + clip(e.args, 220) : ''), result: clip(e.result, 500), cost: e.cost || 0 };
     }
     case 'ask': return { tone: 'ask', tag: 'ASK', text: tool + ' is waiting for you', callId: e.callId, strict: e.level === 'strict', args: clip(e.args, 400), tool };
+    case 'you_said': return { tone: 'info', tag: 'YOU', text: clip(e.text, 300) };
     case 'answered': return { tone: 'info', tag: 'YOU', text: e.allowed === false ? 'You said No' : (e.auto ? 'Allowed automatically (Always allow is on)' : 'You said Yes') };
     case 'expired': return { tone: 'warn', tag: 'TIME', text: 'No answer in time, so it was not done' };
     case 'refused': return { tone: 'bad', mark: 'x', tag: 'BLOCKED', text: clip(e.say || e.reason, 240) || 'That was blocked' };
+    case 'thinking': return { tone: 'mute', tag: 'WAIT', text: clip(e.say, 80) || 'Thinking...', live: true };
+    case 'chatbox': return { tone: 'info', tag: 'NOTICED', text: clip(e.say, 200) || 'The agent noticed your message' };
     case 'retry': return { tone: 'mute', tag: 'AGAIN', text: clip(e.say, 160) || 'Trying again' };
     case 'stopped': return { tone: 'warn', tag: 'STOP', text: clip(e.say, 240) || 'Stopped' };
     case 'done': return { tone: 'good', mark: 'ok', tag: 'DONE', text: clip(e.say || e.summary, 600) || 'Finished' };
@@ -58,9 +61,10 @@ export function mountCodebase(root, deps = {}) {
       '<div class="cbs-grid">' +
         '<section class="cbs-main">' +
           '<div class="cbs-task"><textarea id="cbsTask" rows="3" maxlength="4000" placeholder="Tell it what to build or fix. It works step by step and asks before changing anything."></textarea>' +
-          '<div class="cbs-bar"><select id="cbsKind" aria-label="How hard is the job"><option value="simple">Simple edit</option><option value="hard">Debugging or a big change</option></select>' +
+          '<div class="cbs-bar"><select id="cbsKind" aria-label="How hard is the job"><option value="simple">Simple edit</option><option value="hard">Debugging or a big change</option><option value="quick">Quick (short steps, answers sooner)</option></select>' +
           '<select id="cbsMinutes" aria-label="Longest it may work"><option value="15">Up to 15 min</option><option value="45" selected>Up to 45 min</option><option value="90">Up to 90 min</option><option value="240">Up to 4 hours</option></select>' +
           '<button id="cbsStart" class="cbs-go">Start</button><button id="cbsStop" class="cbs-stop" disabled>Stop</button><button id="cbsClear" title="Empty the list below (it does not stop anything)">Clear</button><button id="cbsClear" title="Empty the list below (it does not stop anything)">Clear</button><span id="cbsMsg" class="cbs-msg" role="status"></span></div></div>' +
+          '<div class="cbs-chat"><input id="cbsChat" type="text" maxlength="2000" disabled placeholder="Type here while it works: it will notice your message" aria-label="Message to the agent while it works"><button id="cbsChatSend" disabled>Send</button></div>' +
           '<ul id="cbsFeed" class="cbs-feed" aria-live="polite"><li class="cbs-empty">Nothing yet. Give it a folder, then a task.</li></ul>' +
         '</section>' +
         '<aside class="cbs-side"><h3>Folders it may use</h3><ul id="cbsGrants" class="cbs-grants"></ul>' +
@@ -83,7 +87,7 @@ export function mountCodebase(root, deps = {}) {
   let keepAlive = null;
   const freshToken = async () => { try { return (getFreshToken ? await getFreshToken() : '') || getToken() || ''; } catch { return getToken() || ''; } };
   const busy = on => {
-    startB.disabled = on; stopB.disabled = !on; $('#cbsTask').disabled = on;
+    startB.disabled = on; stopB.disabled = !on; $('#cbsTask').disabled = on; $('#cbsChat').disabled = !on; $('#cbsChatSend').disabled = !on; if (!on) $('#cbsChat').value = '';
     if (keepAlive) { clearInterval(keepAlive); keepAlive = null; }
     if (on) { keepAlive = setInterval(async () => { const t = await freshToken(); if (t) json('/api/codebase/token', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-pholama-token': t }, body: '{}' }); }, keepAliveMs); if (keepAlive.unref) keepAlive.unref(); }
   };
@@ -91,9 +95,11 @@ export function mountCodebase(root, deps = {}) {
   function push(e) {
     const d = describe(e); if (!d) return;
     if (feed.querySelector('.cbs-empty')) feed.innerHTML = '';
+    for (const old of feed.querySelectorAll('li[data-live="1"]')) old.remove();   // the "Thinking... 12s" line is replaced by the next line, never piled up
     // An answered / expired approval replaces its card, so old buttons never stay clickable.
     if (e.kind === 'answered' || e.kind === 'expired') for (const c of feed.querySelectorAll('.cbs-ask[data-call="' + String(e.callId || '').replace(/[^A-Za-z0-9_-]/g, '') + '"]')) c.remove();
     feed.insertAdjacentHTML('beforeend', rowHtml(d)); rows++;
+    if (d.live && feed.lastElementChild) feed.lastElementChild.dataset.live = '1';
     while (feed.children.length > 400) feed.removeChild(feed.firstChild);
     feed.lastElementChild && feed.lastElementChild.scrollIntoView && feed.lastElementChild.scrollIntoView({ block: 'end' });
     if (e.kind === 'ask' && e.callId) feed.lastElementChild.dataset.run = runId;
@@ -120,6 +126,14 @@ export function mountCodebase(root, deps = {}) {
     if (!r.ok) { busy(false); say(r.j.error || 'It could not start.', true); return; }
     runId = r.j.id || ''; say('Working...'); watch();
   };
+  // A message typed while the agent works: it goes into the agent's chatbox and the agent notices it by itself.
+  const sendChat = async () => {
+    const box = $('#cbsChat'), text = box.value.trim(); if (!text) return;
+    const r = await json('/api/codebase/say', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+    if (r.ok) { box.value = ''; push({ kind: 'you_said', text }); } else say(r.j.error || 'Could not send that.', true);
+  };
+  $('#cbsChatSend').onclick = sendChat;
+  $('#cbsChat').addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); sendChat(); } });
   stopB.onclick = async () => { stopB.disabled = true; const r = await json('/api/codebase/stop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); say(r.ok ? 'Stopping...' : (r.j.error || 'Nothing to stop.'), !r.ok); if (!r.ok) stopB.disabled = false; };
 
   // Allow / Deny: one delegated handler, so cards added later work and cannot be double-clicked into two answers.

@@ -49,6 +49,7 @@ const PLANNERS = {
     if (!t.trim()) return no('A note needs text.');
     return { ok: true, kind: 'note', text: t.slice(0, 2000) };
   },
+  check_chatbox_pholama() { return { ok: true, kind: 'chatbox' }; },
   remember(a) {
     const t = ['text', 'fact', 'memory', 'content', 'note', 'value'].map(k => a[k]).find(v => isStr(v) && v.trim());
     if (!t) return no('Give the fact to remember in "text".');
@@ -140,8 +141,16 @@ const PLANNERS = {
       return { ok: true, kind: 'pc_key', key: k, send: KEYS[k] };
     }
     if (action === 'wait') { const sec = Math.round(+(a.seconds == null ? a.amount : a.seconds)); if (!(sec >= 1 && sec <= 20)) return no('seconds must be from 1 to 20.'); return { ok: true, kind: 'pc_wait', seconds: sec }; }
+    // A spot can be given as real pixels (x, y) or as a fraction of the screen (fx, fy: 0 is the left/top edge, 1 the right/bottom edge). A fraction is easier to read off a picture.
+    const hasF = a.fx != null && a.fy != null && a.x == null;
+    if (hasF) {
+      const fx = +a.fx, fy = +a.fy;
+      if (!(fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1)) return no('fx and fy must be from 0 to 1 (0.5 is the middle).');
+      const kindsF = { move: 'pc_move', click: 'pc_click', double_click: 'pc_double', right_click: 'pc_right', scroll: 'pc_scroll' };
+      return { ok: true, kind: kindsF[action], x: 0, y: 0, fx, fy, amount: Math.max(-20, Math.min(20, Math.round(+a.amount) || 0)) };
+    }
     const x = Math.round(+a.x), y = Math.round(+a.y);
-    if (action !== 'scroll' && !(Number.isFinite(x) && Number.isFinite(y) && x >= 0 && y >= 0 && x <= 20000 && y <= 20000)) return no('x and y must be screen positions.');
+    if (action !== 'scroll' && !(Number.isFinite(x) && Number.isFinite(y) && x >= 0 && y >= 0 && x <= 20000 && y <= 20000)) return no('x and y must be screen positions, or give fx and fy as a fraction from 0 to 1 of the screen.');
     // scroll: amount is in notches, positive = up, negative = down. With no x,y it scrolls where the cursor already is (the plan gives -1,-1 and the runner skips the move).
     const kinds = { move: 'pc_move', click: 'pc_click', double_click: 'pc_double', right_click: 'pc_right', scroll: 'pc_scroll' };
     const here = action === 'scroll' && !(Number.isFinite(x) && Number.isFinite(y));   // no spot given: scroll wherever the cursor is

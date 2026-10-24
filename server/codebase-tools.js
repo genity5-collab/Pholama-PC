@@ -10,6 +10,7 @@ const TOOLS = {
   // --- memory and eyes: the two most important tools, no approval ---
   note_:       { level: 'none',   cost: 0,  where: 'agent',  does: 'Write to the note board: what it is thinking, what is done, what comes next.' },
   remember:    { level: 'none',   cost: 0,  where: 'agent',  does: 'Save one important fact in long-term memory so it is remembered in every later run. Give it as text.' },
+  check_chatbox_pholama: { level: 'none', cost: 0, where: 'agent', does: 'Check the chatbox for new messages from the person, typed while you were working. Use it about every minute of work, and before you say done. It says what they wrote, so you can change course without being restarted.' },
   forget:      { level: 'none',   cost: 0,  where: 'agent',  does: 'Remove one thing from memory. Give its id, shown in YOUR MEMORY as [id].' },
   screenshot_: { level: 'none',   cost: 10, where: 'pc',     does: 'Take a screenshot of what the user sees; it is read by the vision sub-agent and put in the edit log.' },
   next_task:   { level: 'none',   cost: 0,  where: 'agent',  does: 'Say the first task is finished and start the next one. A new note is then required before any edit.' },

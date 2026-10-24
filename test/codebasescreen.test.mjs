@@ -50,7 +50,7 @@ ok('no result, no line', endLine(null) === '');
 // ---- a small fake page so the click handlers can be driven ----
 function fakePage() {
   const els = {}; const mk = (id, extra = {}) => (els[id] = { id, value: '', disabled: false, textContent: '', className: '', innerHTML: '', dataset: {}, children: [], listeners: {}, onclick: null, addEventListener(t, f) { this.listeners[t] = f; }, querySelector() { return null; }, querySelectorAll() { return []; }, insertAdjacentHTML(_, h) { this.innerHTML += h; this.children.push({}); }, removeChild() { this.children.shift(); }, get firstChild() { return this.children[0]; }, get lastElementChild() { return null; }, ...extra });
-  ['#cbsTask', '#cbsKind', '#cbsStart', '#cbsStop', '#cbsMsg', '#cbsFeed', '#cbsGrants', '#cbsDir', '#cbsMode', '#cbsGrant', '#cbsAlways', '#cbsAlwaysOff', '#cbsClear', '#cbsMinutes', '#cbsMem', '#cbsMemText', '#cbsMemAdd', '#cbsSess', '#cbsSessClear'].forEach(k => mk(k));
+  ['#cbsTask', '#cbsKind', '#cbsStart', '#cbsStop', '#cbsMsg', '#cbsFeed', '#cbsGrants', '#cbsDir', '#cbsMode', '#cbsGrant', '#cbsAlways', '#cbsAlwaysOff', '#cbsClear', '#cbsMinutes', '#cbsMem', '#cbsMemText', '#cbsMemAdd', '#cbsSess', '#cbsSessClear', '#cbsChat', '#cbsChatSend'].forEach(k => mk(k));
   els['#cbsKind'].value = 'simple'; els['#cbsMinutes'].value = '45'; els['#cbsMode'].value = 'read';
   const root = { innerHTML: '', querySelector: s => els[s] || null };
   return { root, els };
@@ -92,7 +92,8 @@ class FAKE_ES { constructor() { FAKE_ES.last = this; } close() {} }
   ok('the GitHub token goes in a header, never the body', c.headers['x-github-token'] === 'GH' && !JSON.stringify(c.body).includes('GH'));
   ok('the job kind is hard or simple (the server only knows those)', c.body.kind === 'hard');
   ok('the task is sent', c.body.task === 'make a page');
-  ok('while running Start is off and Stop is on', t.els['#cbsStart'].disabled === true && t.els['#cbsStop'].disabled === false); }
+  ok('while running Start is off and Stop is on', t.els['#cbsStart'].disabled === true && t.els['#cbsStop'].disabled === false);
+  ok('while running the chat line opens so you can talk to it', t.els['#cbsChat'].disabled === false && t.els['#cbsChatSend'].disabled === false); }
 { const t = boot({ 'POST /api/codebase/start': [200, { ok: true, id: 'r1' }] }, { token: 'LOGIN' }); t.els['#cbsTask'].value = 'x'; await t.els['#cbsStart'].onclick();
   ok('with no GitHub token no GitHub header is sent', !('x-github-token' in t.calls[0].headers)); }
 { const t = boot({ 'POST /api/codebase/start': [409, { error: 'A task is already running.' }] }); t.els['#cbsTask'].value = 'x'; await t.els['#cbsStart'].onclick();
