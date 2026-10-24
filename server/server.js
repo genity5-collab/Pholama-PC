@@ -10,6 +10,13 @@ const pricing = require('./pricing');
 const ram = require('./ram');
 const freeMem = () => (process.env.PHOLAMA_FAKE_FREEMEM_FILE ? (+String(require('fs').readFileSync(process.env.PHOLAMA_FAKE_FREEMEM_FILE, 'utf8')).trim() || os.freemem()) : os.freemem());   // test seam only
 const sec = require('./security');
+// Pholama Codebase is built on first use, so a PC that never opens it pays nothing at start-up.
+let _codebase = null;
+const codebaseApi = () => _codebase || (_codebase = require('./codebase-api').create({
+  grants: require('./codebase-grants'), budget: require('./codebase-budget'),
+  win: require('./codebase-win'), github: require('./codebase-github'),
+  log: m => { try { console.log('[codebase] ' + m); } catch {} },
+}));
 
 const PORT = +process.env.PORT || 11435;
 const HOST = process.env.HOST || '127.0.0.1'; // set HOST=0.0.0.0 to chat from your phone on same WiFi
@@ -863,6 +870,8 @@ const server = http.createServer(async (req, res) => {
       if (req.who !== 'local' && !REMOTE_OK) return json(res, 403, { error: 'This can only be done on the PC itself.' });
       if (!sleeper.touch(req.method, p)) return json(res, 503, { error: 'Pholama is asleep: nobody used an AI for a day, so all local AIs were shut down to free your memory. On the PC, run:  pholama awake', asleep: true });
     }
+    // Pholama Codebase: the terminal-style coding agent. All of its routes live in codebase-api.js; this is only the hand-off.
+    if (p.startsWith('/api/codebase')) { if (await codebaseApi().handle(req, res, p, u)) return; }
     // serve / shutdown: only from this PC
     if (p === '/api/serve' && req.method === 'POST') {
       if (req.who !== 'local') return json(res, 403, { error: 'Only this PC can start serving.' });

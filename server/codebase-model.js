@@ -38,6 +38,10 @@ function shape(messages) {
   return { sys: sys ? String(sys.content) : '', msgs: out };
 }
 
+// The cloud swaps <tool> for <tool_call> on the way out, because Free.ai reserves that tag and Studio expects the swapped form.
+// The Codebase loop speaks the plain form, so the swap is undone here, once, on every reply.
+const fromCloud = t => String(t || '').replace(/<(\/?)tool_call>/gi, '<$1tool>');
+
 async function ask(opts) {
   const { token, messages, kind = 'simple', signal, fetchFn = fetch, url = FN_DEFAULT, log = () => {} } = opts || {};
   const tk = String(token || '').trim(); if (!tk) throw fail('login');
@@ -61,17 +65,17 @@ async function ask(opts) {
     if (code === 'limit-month' || code === 'limit-day' || r.status === 429) throw fail('limit', code);
     throw fail('busy', code || 'server');
   }
-  const text = String(j && j.reply || '');
+  const text = fromCloud(j && j.reply);
   if (!text.trim()) { log('codebase empty reply'); throw fail('busy', 'empty'); }
   return { text, credits: j.credits_left != null ? { left: Number(j.credits_left), cap: Number(j.week_cap), cost: Number(j.cost) } : null };
 }
 
 // What the agent loop plugs in as `model`: (messages) -> text. The kind can change between turns (the agent can decide a task is hard).
 function makeModel({ getToken, getKind = () => 'simple', signal, fetchFn, url, log, onCredits } = {}) {
-  return async messages => {
-    const r = await ask({ token: typeof getToken === 'function' ? getToken() : getToken, messages, kind: getKind(), signal, fetchFn, url, log });
+  return async (messages, callSignal) => {   // the run hands in its own signal on every call, so Stop cancels the request that is in flight
+    const r = await ask({ token: typeof getToken === 'function' ? getToken() : getToken, messages, kind: getKind(), signal: callSignal || signal, fetchFn, url, log });
     if (r.credits && typeof onCredits === 'function') { try { onCredits(r.credits); } catch {} }
     return r.text;
   };
 }
-module.exports = { ask, makeModel, shape, pickModel, MODELS, MARK, PLAIN, FN_DEFAULT, KEEP_OTHER };
+module.exports = { ask, makeModel, shape, fromCloud, pickModel, MODELS, MARK, PLAIN, FN_DEFAULT, KEEP_OTHER };

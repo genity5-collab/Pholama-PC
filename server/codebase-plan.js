@@ -41,7 +41,14 @@ function needPath(args, key, mode) {
 }
 
 const PLANNERS = {
-  note_(a) { if (!isStr(a.text) || !a.text.trim()) return no('A note needs text.'); return { ok: true, kind: 'note', text: a.text.slice(0, 2000) }; },
+  note_(a) {
+    // The model names the field many ways (text, content, note, summary, message...). The note is the one string it sent; if it sent several, the longest.
+    const pref = ['text', 'content', 'note', 'summary', 'message', 'plan', 'description', 'thought', 'notes'];
+    let t = ''; for (const k of pref) if (isStr(a[k]) && a[k].trim()) { t = a[k]; break; }
+    if (!t) { const strs = Object.entries(a).filter(([k, v]) => k !== 'name' && isStr(v) && v.trim()).map(([, v]) => v); if (strs.length) t = strs.sort((x, y) => y.length - x.length)[0]; }
+    if (!t.trim()) return no('A note needs text.');
+    return { ok: true, kind: 'note', text: t.slice(0, 2000) };
+  },
   next_task(a) { return { ok: true, kind: 'next_task' }; },
   screenshot_(a) { return { ok: true, kind: 'screenshot', scale: 0.5 }; },
   pull_file(a) { const r = needPath(a, 'path', 'read'); return r.ok ? { ok: true, kind: 'pull', from: r.p } : r; },

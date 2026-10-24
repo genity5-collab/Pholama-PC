@@ -131,6 +131,34 @@ const MSGS = [{ role: 'system', content: 'RULES' }, { role: 'user', content: 'fi
   e = null; try { await M.makeModel({})(MSGS); } catch (x) { e = x; }
   ok('makeModel with nothing configured fails plainly, not with a crash', e && e.plain === true);
 
+  // ---- the cloud's <tool_call> swap is undone (found in a REAL run: every reply was thrown away) ----
+  { const L = require('../server/codebase-loop');
+    const REAL = '<tool_call>{"name":"pull_file","path":"/app/x/readme.txt"}</tool_call>';   // exactly what the live cloud returned
+    const got = await M.ask({ token: 't', messages: MSGS, fetchFn: cloud({ status: 200, json: { reply: REAL } }).fetchFn });
+    ok('the real cloud reply comes back in the form the loop reads', got.text === '<tool>{"name":"pull_file","path":"/app/x/readme.txt"}</tool>');
+    ok('and the loop can parse it', L.parse(got.text) && L.parse(got.text).name === 'pull_file');
+    ok('keys are never renamed (the loop unwraps them)', M.fromCloud('<tool_call>{"name":"x","arguments":{"a":1}}</tool_call>') === '<tool>{"name":"x","arguments":{"a":1}}</tool>');
+    ok('already-plain text is unchanged', M.fromCloud('<tool>{"name":"done"}</tool>') === '<tool>{"name":"done"}</tool>');
+    ok('upper case tags are handled too', M.fromCloud('<TOOL_CALL>{}</TOOL_CALL>') === '<tool>{}</tool>');
+    ok('plain words are not touched', M.fromCloud('I will read the file') === 'I will read the file');
+    for (const bad of [null, undefined, 5, {}, []]) ok('junk reply does not crash fromCloud: ' + JSON.stringify(bad), typeof M.fromCloud(bad) === 'string');
+    ok('the code a file contains is not damaged by the swap', M.fromCloud('<tool_call>{"name":"edit_file","content":"x = 1"}</tool_call>').includes('"content":"x = 1"')); }
+
+  // ---- the per-call signal (this is how Stop reaches the request) ----
+  { const ac3 = new AbortController(); let err = null;
+    const hang2 = (url, o) => new Promise((_, rej) => o.signal.addEventListener('abort', () => { const x = new Error('aborted'); x.name = 'AbortError'; rej(x); }));
+    const mm = M.makeModel({ getToken: () => 'tok', fetchFn: hang2 });
+    const pr = mm(MSGS, ac3.signal); ac3.abort(); try { await pr; } catch (x) { err = x; }
+    ok('a signal passed on the call cancels that request', err && err.kind === 'stopped'); }
+  { const ac4 = new AbortController(); ac4.abort(); let err = null, hit = 0;
+    try { await M.makeModel({ getToken: () => 'tok', fetchFn: async () => { hit++; return { ok: true, status: 200, json: async () => ({ reply: 'x' }) }; } })(MSGS, ac4.signal); } catch (x) { err = x; }
+    ok('an already-stopped call sends nothing', err && err.kind === 'stopped' && hit === 0); }
+  { const acA = new AbortController(); let hit2 = 0;
+    const mm = M.makeModel({ getToken: () => 'tok', signal: acA.signal, fetchFn: async (u, o) => { hit2++; return { ok: true, status: 200, json: async () => ({ reply: 'fine' }) }; } });
+    ok('with no per-call signal the creation signal still works', (await mm(MSGS)) === 'fine');
+    const acB = new AbortController();
+    ok('a per-call signal wins over the creation signal', (await mm(MSGS, acB.signal)) === 'fine' && hit2 === 2); }
+
   console.log(`\n${fail ? 'FAILURES: ' + fail : 'ALL PASSED'} (${pass} checks)`);
   process.exit(fail ? 1 : 0);
 })();

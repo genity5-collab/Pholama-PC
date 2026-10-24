@@ -14,6 +14,7 @@ const HARD_MAX_MINUTES = 240;    // nobody can set it higher than 4 hours
 const KEEP_RECENT = 14;          // newest messages kept word for word when the history is compacted
 const COMPACT_AT_CHARS = 36000;  // about 9k tokens: compact before the model's window fills up
 const MAX_RESULT = 6000;         // characters of a tool result given back to the model
+const MAX_MISS = 4;              // this many replies in a row with no usable tool stops the run (each one is a paid request)
 const MAX_SAME = 3;              // the same refused call this many times in a row stops the run
 const TOOL_RE = /<tool>\s*(\{[\s\S]*?\})\s*<\/tool>/;
 
@@ -43,7 +44,15 @@ function compact(msgs, notes) {
 function parse(text) {
   const m = TOOL_RE.exec(String(text || ''));
   if (!m) return null;
-  try { const o = JSON.parse(m[1]); return o && typeof o.name === 'string' ? o : null; } catch { return null; }
+  try {
+    const o = JSON.parse(m[1]); if (!o || typeof o.name !== 'string') return null;
+    // The model often writes {"name":"x","args":{...}} or {"name":"x","arguments":{...}}; the real arguments are inside. Flat form still works.
+    for (const k of ['args', 'arguments']) {
+      const w = o[k];
+      if (w && typeof w === 'object' && !Array.isArray(w)) { const { [k]: _drop, ...rest } = o; return { ...rest, ...w, name: o.name }; }
+    }
+    return o;
+  } catch { return null; }
 }
 
 // deps: { model(messages) -> text, tools{name:async(args)->string}, ask(req)->{allowed,callId}, budget{gate(),spend(n)}, emit(event), now() }
@@ -53,18 +62,20 @@ async function run(task, deps) {
   const notes = [];
   const msgs = [{ role: 'system', content: SYSTEM }, { role: 'user', content: String(task || '') }];
   const mem = { lastNoteAt: 0, lastEditAt: 0, taskId: 1, noteTaskId: 0 };
-  let seq = 0, tick = 0, lastRefused = '', sameCount = 0, spent = 0;
+  let seq = 0, tick = 0, lastRefused = '', sameCount = 0, spent = 0, misses = 0, badCount = 0, lastBad = '';
   const log = (kind, data) => emit({ kind, at: now(), ...data });
 
   for (let step = 1; step <= MAX_STEPS; step++) {
     if (now() >= deadline) { log('stopped', { reason: 'time', say: 'Reached the time limit for this run (' + minutes + ' minutes). Everything done so far is saved. Start another run to continue.' }); return { ok: false, stopped: 'time', steps: step - 1, spent }; }
+    if (deps.signal && deps.signal.aborted) { log('stopped', { reason: 'stop', say: 'Stopped.' }); return { ok: false, stopped: 'stop', steps: step - 1, spent }; }
     const g = budget.gate();
     if (g && g.ok === false) { log('stopped', { reason: 'budget', say: g.say || 'Out of credits for now.' }); return { ok: false, stopped: 'budget', steps: step - 1, spent }; }
 
     let text;
-    try { msgs.splice(0, msgs.length, ...compact(msgs, notes)); text = await model(msgs); } catch (e) { log('stopped', { reason: 'model', say: 'The model could not answer. Try again in a moment.' }); return { ok: false, stopped: 'model', steps: step - 1, spent }; }   // no provider details to the user
+    try { msgs.splice(0, msgs.length, ...compact(msgs, notes)); text = await model(msgs, deps.signal); } catch (e) { log('stopped', { reason: 'model', say: 'The model could not answer. Try again in a moment.' }); return { ok: false, stopped: 'model', steps: step - 1, spent }; }   // no provider details to the user
     const call = parse(text);
-    if (!call) { log('retry', { step, say: 'The model did not pick a tool; asking again.' }); msgs.push({ role: 'assistant', content: String(text || '').slice(0, 500) }, { role: 'user', content: 'Reply with exactly one <tool>{"name":...}</tool> line.' }); continue; }
+    if (!call) { if (++misses >= MAX_MISS) { log('stopped', { reason: 'stuck', say: 'The agent could not decide what to do. Try rewording the task.' }); return { ok: false, stopped: 'stuck', steps: step, spent }; } log('retry', { step, say: 'The model did not pick a tool; asking again.' }); msgs.push({ role: 'assistant', content: String(text || '').slice(0, 500) }, { role: 'user', content: 'Reply with exactly one <tool>{"name":...}</tool> line.' }); continue; }
+    misses = 0;
     msgs.push({ role: 'assistant', content: '<tool>' + JSON.stringify(call) + '</tool>' });
     const { name, ...args } = call;
     const callId = 'c' + (++seq);
@@ -107,6 +118,10 @@ async function run(task, deps) {
     if (name === 'next_task') mem.taskId++;   // the LOOP counts tasks, so the model cannot skip the note by leaving a flag out
     if (T.isEditing(name)) mem.lastEditAt = tick;
     if (meta.cost) { const sp = budget.spend(meta.cost); spent += meta.cost; if (sp && sp.ok === false) { log('stopped', { reason: 'budget', say: 'Out of credits for now.' }); return { ok: false, stopped: 'budget', steps: step, spent }; } }
+    // A tool that keeps answering REFUSED / ERROR for the same call is stuck just like a refused call: each try is a paid request.
+    { const bad = typeof result === 'string' && /^(REFUSED|ERROR):/.test(result), key = name + ':' + (bad ? result.slice(0, 80) : '');
+      if (bad) { badCount = key === lastBad ? badCount + 1 : 1; lastBad = key; } else { badCount = 0; lastBad = ''; }
+      if (badCount >= MAX_SAME) { log('tool', { step, tool: name, cost: 0, args: T.redact(JSON.stringify(args)).slice(0, 400), result: T.redact(String(result)).slice(0, 300) }); log('stopped', { reason: 'stuck', say: 'The same step kept failing, so the run was stopped. Check the message above or try rewording the task.' }); return { ok: false, stopped: 'stuck', steps: step, spent }; } }
     lastRefused = ''; sameCount = 0;
 
     // 6 + 7 + 8. hide secrets, write the edit log, hand back to the model
@@ -118,4 +133,4 @@ async function run(task, deps) {
   return { ok: false, stopped: 'steps', steps: MAX_STEPS, spent };
 }
 
-module.exports = { run, parse, compact, SYSTEM, MAX_STEPS, MAX_SAME, DEFAULT_MAX_MINUTES, HARD_MAX_MINUTES, KEEP_RECENT, COMPACT_AT_CHARS };
+module.exports = { run, parse, compact, SYSTEM, MAX_STEPS, MAX_SAME, MAX_MISS, DEFAULT_MAX_MINUTES, HARD_MAX_MINUTES, KEEP_RECENT, COMPACT_AT_CHARS };

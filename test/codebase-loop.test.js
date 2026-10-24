@@ -163,6 +163,45 @@ function rig(script, o = {}) {
   ok('parser: name must be text', L.parse('<tool>{"name":5}</tool>') === null);
   ok('parser: empty', L.parse('') === null && L.parse(null) === null);
 
+  // ---- wrapped arguments (found in a REAL run: {"name":"note_","args":{"text":..}} was refused as "a note needs text", 115 credits burned) ----
+  ok('args wrapper is unwrapped', JSON.stringify(L.parse('<tool>{"name":"note_","args":{"text":"hi"}}</tool>')) === '{"name":"note_","text":"hi"}');
+  ok('arguments wrapper is unwrapped', JSON.stringify(L.parse('<tool>{"name":"note_","arguments":{"text":"hi"}}</tool>')) === '{"name":"note_","text":"hi"}');
+  ok('flat form still works', JSON.stringify(L.parse('<tool>{"name":"note_","text":"hi"}</tool>')) === '{"name":"note_","text":"hi"}');
+  ok('the tool name can never be replaced from inside the wrapper', L.parse('<tool>{"name":"note_","args":{"name":"delete_folder_or_window_or_app","text":"x"}}</tool>').name === 'note_');
+  ok('a non-object wrapper is left alone', L.parse('<tool>{"name":"a","args":"text"}</tool>').args === 'text');
+  ok('an array wrapper is left alone', Array.isArray(L.parse('<tool>{"name":"a","args":[1]}</tool>').args));
+  ok('a null wrapper is left alone', L.parse('<tool>{"name":"a","args":null}</tool>').name === 'a');
+  { const rw = rig([tool({ name: 'note_', args: { text: 'plan' } }), tool({ name: 'edit_file', arguments: { path: 'a.js' } }), tool({ name: 'done', summary: 'ok' })]);
+    const ow = await L.run('x', rw.deps); ok('a whole run works with wrapped arguments', ow.ok === true && rw.ran.join() === 'note_,edit_file'); }
+  { let seen = null; const rw = rig([tool({ name: 'note_', args: { text: 'plan' } }), tool({ name: 'done', summary: 'ok' })]); rw.deps.tools.note_ = async a => { seen = a; return 'ok'; };
+    await L.run('x', rw.deps); ok('the tool receives the unwrapped arguments', seen && seen.text === 'plan' && seen.args === undefined); }
+
+  // ---- a tool that keeps failing the same way is stuck too ----
+  { const r6 = rig(Array.from({ length: 30 }, () => tool({ name: 'note_', text: 'x' }))); r6.deps.tools.note_ = async () => 'REFUSED: A note needs text.';
+    const o6 = await L.run('x', r6.deps); ok('the same REFUSED result ' + L.MAX_SAME + ' times stops the run', o6.ok === false && o6.stopped === 'stuck' && r6.calls() === L.MAX_SAME);
+    ok('and the person is told in plain words', r6.events.some(e => e.kind === 'stopped' && /kept failing/.test(e.say))); }
+  { const r7 = rig(Array.from({ length: 30 }, () => tool({ name: 'note_', text: 'x' }))); r7.deps.tools.note_ = async () => 'ERROR: disk full';
+    const o7 = await L.run('x', r7.deps); ok('the same ERROR result stops the run too', o7.stopped === 'stuck' && r7.calls() === L.MAX_SAME); }
+  { let k = 0; const r8 = rig(Array.from({ length: 12 }, () => tool({ name: 'note_', text: 'x' })).concat([tool({ name: 'done', summary: 'ok' })])); r8.deps.tools.note_ = async () => (++k % 3 === 0 ? 'fine' : 'ERROR: try again');
+    const o8 = await L.run('x', r8.deps); ok('a failure now and then, with successes between, is not stuck', o8.ok === true); }
+  { let k = 0; const r9 = rig(Array.from({ length: 12 }, () => tool({ name: 'note_', text: 'x' })).concat([tool({ name: 'done', summary: 'ok' })])); r9.deps.tools.note_ = async () => 'ERROR: failure number ' + (++k);
+    const o9 = await L.run('x', r9.deps); ok('different errors are counted separately', o9.ok === false ? o9.stopped !== 'stuck' || r9.calls() > L.MAX_SAME : true); }
+
+  // ---- a model that never picks a tool must not spend forever (found in a REAL run: it retried until stopped by hand) ----
+  { let asks = 0; const r2 = rig([]); r2.deps.model = async () => { asks++; return 'I think I should look at the file first.'; };
+    const o2 = await L.run('x', r2.deps);
+    ok('endless "no tool" replies stop the run', o2.ok === false && o2.stopped === 'stuck');
+    ok('it stops after exactly ' + L.MAX_MISS + ' paid requests, not more', asks === L.MAX_MISS);
+    ok('the person is told in plain words', r2.events.some(e => e.kind === 'stopped' && /could not decide/.test(e.say)));
+    ok('the message names no model or provider', !r2.events.some(e => /qwen|free\.ai|HTTP/i.test(JSON.stringify(e)))); }
+  { let n = 0; const r3 = rig([]); r3.deps.model = async () => { n++; return n % 3 === 0 ? tool({ name: 'note_', text: 'ok' }) : (n > 12 ? tool({ name: 'done', summary: 'fine' }) : 'hmm'); };
+    const o3 = await L.run('x', r3.deps);
+    ok('a good tool call resets the miss counter (two misses, a tool, two misses, ... still finishes)', o3.ok === true); }
+  { let n = 0; const r4 = rig([]); r4.deps.model = async () => { n++; return n <= L.MAX_MISS - 1 ? 'no tool' : tool({ name: 'done', summary: 'recovered' }); };
+    const o4 = await L.run('x', r4.deps); ok('one miss fewer than the limit still recovers', o4.ok === true && o4.summary === 'recovered'); }
+  { const r5 = rig([tool({ name: 'note_', text: 'a' }), 'no tool', 'no tool', 'no tool', tool({ name: 'note_', text: 'b' }), 'no tool', 'no tool', 'no tool', tool({ name: 'done', summary: 'ok' })]);
+    const o5 = await L.run('x', r5.deps); ok('misses are counted in a row, not in total', o5.ok === true); }
+
   console.log(`\n${fail ? 'FAILURES: ' + fail : 'ALL PASSED'} (${pass} checks)`);
   process.exit(fail ? 1 : 0);
 })();

@@ -16,7 +16,8 @@ function create(deps) {
     const text = String(task || '').trim();
     if (!text) return { ok: false, error: 'Tell the agent what to do.' };
     if (text.length > 4000) return { ok: false, error: 'That task is too long. Keep it under 4,000 characters.' };
-    const r = run = { id: 'r' + (++counter) + '-' + now(), events: [], waiters: new Set(), pending: new Map(), done: false, result: null, stopped: false };
+    const ac = new AbortController();
+    const r = run = { ac, id: 'r' + (++counter) + '-' + now(), events: [], waiters: new Set(), pending: new Map(), done: false, result: null, stopped: false };
     const ask = req => new Promise(resolve => {
       if (r.stopped) return resolve({ allowed: false });
       const timer = setTimeout(() => { if (r.pending.delete(req.callId)) { push(r, { kind: 'expired', callId: req.callId, at: now() }); resolve({ allowed: false }); } }, askTimeout);
@@ -25,7 +26,7 @@ function create(deps) {
     });
     const emit = e => push(r, e);
     const guardedBudget = { gate: () => (r.stopped ? { ok: false, say: 'Stopped.' } : budget.gate()), spend: n => budget.spend(n) };
-    loop.run(text, { model, tools, ask, budget: guardedBudget, emit, now }).then(res => { r.result = res; }, () => { r.result = { ok: false, stopped: 'error' }; }).then(() => {
+    loop.run(text, { model, tools, ask, budget: guardedBudget, emit, now, signal: ac.signal }).then(res => { r.result = res; }, () => { r.result = { ok: false, stopped: 'error' }; }).then(() => {
       r.done = true; for (const p of r.pending.values()) { clearTimeout(p.timer); p.resolve({ allowed: false }); } r.pending.clear();
       push(r, { kind: 'end', at: now(), ok: !!(r.result && r.result.ok) });
     });
@@ -45,7 +46,7 @@ function create(deps) {
 
   function stop() {
     if (!run || run.done) return { ok: false, error: 'Nothing is running.' };
-    run.stopped = true;
+    run.stopped = true; try { run.ac.abort(); } catch {}   // Stop also cancels the model request that is in flight, so no more is paid for
     for (const [id, p] of run.pending) { clearTimeout(p.timer); p.resolve({ allowed: false }); run.pending.delete(id); }
     return { ok: true };
   }

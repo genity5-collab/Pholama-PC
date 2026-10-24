@@ -168,6 +168,20 @@ const GOOD = { action: 'write_files', repo: 'owner/repo', branch: 'pholama/add-m
   out = await G.execute(P('github_write', GOOD), { token: TOKEN, fetchFn: async () => { throw new Error('socket ' + TOKEN); } });
   ok('a network error is plain and leak-free', out.ok === false && !out.text.includes('SECRET') && /reach GitHub/.test(out.text));
   out = await G.execute(P('github_write', GOOD), { token: '', fetchFn: fakeGitHub().f });
+  { // a token in the environment must NEVER be picked up by itself
+    const saved = { a: process.env.GITHUB_TOKEN_5, b: process.env.GITHUB_TOKEN_4, c: process.env.GITHUB_TOKEN };
+    process.env.GITHUB_TOKEN_5 = 'github_pat_ENVIRONMENTTOKENENVIRONMENTTOKEN12345'; process.env.GITHUB_TOKEN_4 = 'ghp_ENVIRONMENTTOKENENVIRONMENTTOKEN123456'; process.env.GITHUB_TOKEN = 'ghp_ENVIRONMENTTOKENENVIRONMENTTOKEN654321';
+    let hit = 0; const spy = async () => { hit++; return { status: 200, json: async () => ({}), text: async () => '{}' }; };
+    const pl = G.plan('github_read', { action: 'repo_info', repo: 'a/b' });
+    for (const t of [undefined, '', null, 0, {}, []]) { hit = 0; const r = await G.execute(pl, t === undefined ? { fetchFn: spy } : { token: t, fetchFn: spy }); ok('environment tokens are ignored (token=' + JSON.stringify(t) + '): refused, GitHub never called', r.ok === false && hit === 0 && /No GitHub token/.test(r.text)); }
+    ok('no options at all is refused too', (await G.execute(pl)).ok === false);
+    let sent = ''; const spy2 = async (u, o) => { sent = JSON.stringify(o && o.headers || {}); return { status: 200, json: async () => ({ full_name: 'a/b', default_branch: 'main' }), text: async () => '{}' }; };
+    await G.execute(pl, { token: 'ghp_GIVENBYTHEPERSONGIVENBYTHEPERSON12345', fetchFn: spy2 });
+    ok('only the token the person gave is sent', sent.includes('GIVENBYTHEPERSON') && !sent.includes('ENVIRONMENTTOKEN'));
+    if (saved.a === undefined) delete process.env.GITHUB_TOKEN_5; else process.env.GITHUB_TOKEN_5 = saved.a;
+    if (saved.b === undefined) delete process.env.GITHUB_TOKEN_4; else process.env.GITHUB_TOKEN_4 = saved.b;
+    if (saved.c === undefined) delete process.env.GITHUB_TOKEN; else process.env.GITHUB_TOKEN = saved.c;
+  }
   ok('no token: says so without calling GitHub', out.ok === false && /No GitHub token/.test(out.text));
   // failure halfway never claims success
   for (const step of [/POST .*\/git\/blobs$/, /POST .*\/git\/trees$/, /POST .*\/git\/commits$/, /PATCH .*\/git\/refs/, /POST .*\/git\/refs$/]) {

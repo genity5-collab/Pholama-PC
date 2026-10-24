@@ -113,8 +113,9 @@ const friendly = (r, token) => {
   return 'GitHub returned an error (' + r.status + ').';
 };
 
-async function execute(pl, { token = process.env.GITHUB_TOKEN_5 || process.env.GITHUB_TOKEN_4 || '', fetchFn = fetch } = {}) {
+async function execute(pl, { token = '', fetchFn = fetch } = {}) {   // the token is ONLY what the person gave this PC; never an environment variable
   if (!pl || pl.ok !== true) return { ok: false, text: (pl && pl.say) || 'Not allowed.' };
+  if (!token || typeof token !== 'string') return { ok: false, text: 'No GitHub token is set for Pholama Codebase. Add one in Settings first.' };
   const call = client(token, fetchFn), R = pl.repo, base = '/repos/' + R.full;
   const fail = r => ({ ok: false, text: friendly(r, token) });
   const enc = p => p.split('/').map(encodeURIComponent).join('/');

@@ -110,6 +110,31 @@ function make(script, o = {}) {
   ok('and sees the answer', await until(() => live.includes('answered')));
   s.stop();
   ok('a throwing watcher does not break the run', (() => { const t = make([tool({ name: 'note_' }), tool({ name: 'done', summary: 'ok' })]); t.s.start('x'); t.s.watch(() => { throw new Error('boom'); }); return true; })());
+  // ---- Stop reaches the paid model request ----
+  { let seen = null, aborted = false, release;
+    const hang = (msgs, signal) => new Promise((res, rej) => { seen = signal; signal.addEventListener('abort', () => { aborted = true; const e = new Error('aborted'); e.name = 'AbortError'; rej(e); }); release = res; });
+    const t = S.create({ model: hang, tools: {}, budget: { gate: () => ({ ok: true }), spend: () => ({ ok: true }) } });
+    t.start('x'); await until(() => seen);
+    ok('the model is given an abort signal', seen && typeof seen.addEventListener === 'function' && seen.aborted === false);
+    t.stop();
+    ok('Stop aborts the request that is in flight', await until(() => aborted));
+    ok('the run ends after Stop', await until(() => t.state().done === true));
+    ok('a stopped run reports it was stopped, not a model failure', t.state().result && t.state().result.ok === false);
+    ok('stopping twice is harmless', t.stop().ok === false);
+  }
+  { let calls = 0;
+    const t = S.create({ model: async () => { calls++; return tool({ name: 'note_', text: 'x' }); }, tools: { note_: async () => 'ok' }, budget: { gate: () => ({ ok: true }), spend: () => ({ ok: true }) } });
+    t.start('x'); await until(() => calls >= 1); t.stop(); await until(() => t.state().done);
+    const after = calls; await sleep(120);
+    ok('after Stop no further model request is made', calls === after);
+  }
+  { const sigs = [];
+    const t = S.create({ model: async (m, sg) => { sigs.push(sg); return tool({ name: 'done', summary: 'ok' }); }, tools: {}, budget: { gate: () => ({ ok: true }), spend: () => ({ ok: true }) } });
+    t.start('one'); await until(() => t.state().done); t.start('two'); await until(() => t.state().done && sigs.length === 2);
+    ok('every run gets its own signal', sigs.length === 2 && sigs[0] !== sigs[1]);
+    ok('stopping run one does not cancel run two', sigs[0].aborted === false && sigs[1].aborted === false);
+  }
+
   await sleep(100);
 
   console.log(`\n${fail ? 'FAILURES: ' + fail : 'ALL PASSED'} (${pass} checks)`);

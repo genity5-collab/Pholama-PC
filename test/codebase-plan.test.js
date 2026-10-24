@@ -107,5 +107,20 @@ ok('typed github_write to a pholama branch plans', P.plan('github_write', { acti
 ok('github_write to main is refused through the planner too', P.plan('github_write', { action: 'write_files', repo: 'o/r', branch: 'main', message: 'm', files: [{ path: 'a', content: 'x' }] }).ok === false);
 ok('github_write of a workflow file is refused through the planner too', P.plan('github_write', { action: 'write_files', repo: 'o/r', branch: 'pholama/x', message: 'm', files: [{ path: '.github/workflows/ci.yml', content: 'x' }] }).ok === false);
 
+ok('a note with "content" is accepted', P.plan('note_', { content: 'plan A' }).ok === true && P.plan('note_', { content: 'plan A' }).text === 'plan A');
+ok('a note with "note" is accepted', P.plan('note_', { note: 'plan B' }).ok === true);
+ok('"text" still wins', P.plan('note_', { text: 'T', content: 'C' }).text === 'T');
+for (const bad of [{}, { content: '' }, { content: '   ' }, { content: 5 }, { content: null }, { note: [] }, { text: {}, content: {} }]) ok('a note with no real text is still refused: ' + JSON.stringify(bad), P.plan('note_', bad).ok === false);
+ok('a long note is cut to 2000', P.plan('note_', { content: 'x'.repeat(5000) }).text.length === 2000);
+
+ok('a note called "summary" is accepted (seen in a real run)', P.plan('note_', { summary: 'Create the file' }).text === 'Create the file');
+for (const k of ['message', 'plan', 'description', 'thought', 'notes']) ok('a note called "' + k + '" is accepted', P.plan('note_', { [k]: 'hello' }).text === 'hello');
+ok('an unknown field name with one string is accepted', P.plan('note_', { whatever: 'hello there' }).text === 'hello there');
+ok('with several strings the longest wins', P.plan('note_', { a: 'hi', b: 'this one is much longer' }).text === 'this one is much longer');
+ok('the preferred names win over a longer unknown field', P.plan('note_', { text: 'short', zzz: 'a very very much longer value here' }).text === 'short');
+ok('the tool name is never used as the note', P.plan('note_', { name: 'note_' }).ok === false);
+ok('non-text values are not notes', P.plan('note_', { a: 5, b: true, c: null, d: [], e: {} }).ok === false);
+ok('an unknown-field note is still cut to 2000', P.plan('note_', { zzz: 'q'.repeat(9000) }).text.length === 2000);
+
 console.log(`\n${fail ? 'FAILURES: ' + fail : 'ALL PASSED'} (${pass} checks)`);
 process.exit(fail ? 1 : 0);

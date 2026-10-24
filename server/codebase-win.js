@@ -22,6 +22,7 @@ Write-Output "saved"`,
   windows: `
 Get-Process | Where-Object { $_.MainWindowTitle } | ForEach-Object { $_.MainWindowTitle } | Sort-Object -Unique`,
   open: `Start-Process -FilePath $env:PH_A`,
+  notepad: `Start-Process -FilePath 'notepad.exe' -ArgumentList ('"' + $env:PH_A + '"'); Write-Output "opened in Notepad"`,   // the agent's notes window: Notepad itself, with a path that came from Pholama, never from the model
   close: `
 $t=$env:PH_A; $n=0
 Get-Process | Where-Object { $_.MainWindowTitle -eq $t } | ForEach-Object { if($_.CloseMainWindow()){$n++} }
@@ -108,6 +109,7 @@ async function execute(pl, ctx = {}) {
     case 'create': return pl.type === 'folder' ? ps('create_folder', { a: pl.path }) : ps('create_file', { a: pl.path, stdin: pl.content });
     case 'move': return ps('move', { a: pl.from, b: pl.to });
     case 'delete': return ps('delete', { a: pl.path });
+    case 'notepad': return ps('notepad', { a: pl.path });
     case 'open': { const r = await ps('open', { a: pl.target }); if (r.ok && ctx.opened) ctx.opened.add(pl.target); return r; }
     case 'close': {
       if (ctx.opened && !ctx.opened.has(pl.title)) return { ok: false, text: 'REFUSED: that window was not opened by the agent. Pick one from OPEN WINDOWS exactly.' };
