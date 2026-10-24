@@ -49,7 +49,7 @@ export function endLine(r) {
 }
 
 export function mountCodebase(root, deps = {}) {
-  const { fetchFn = (...a) => fetch(...a), getToken = () => '', getGithubToken = () => '', EventSourceCtor = (typeof EventSource !== 'undefined' ? EventSource : null) } = deps;
+  const { fetchFn = (...a) => fetch(...a), getToken = () => '', getFreshToken = null, keepAliveMs = 120000, getGithubToken = () => '', EventSourceCtor = (typeof EventSource !== 'undefined' ? EventSource : null) } = deps;
   const $ = s => root.querySelector(s);
   root.innerHTML =
     '<div class="cbs">' +
@@ -75,7 +75,14 @@ export function mountCodebase(root, deps = {}) {
   let es = null, runId = '', rows = 0;
   const say = (t, bad) => { msg.textContent = t || ''; msg.className = 'cbs-msg' + (bad ? ' bad' : ''); };
   const json = async (url, opts) => { const r = await fetchFn(url, opts); let j = {}; try { j = await r.json(); } catch {} return { ok: r.ok, status: r.status, j }; };
-  const busy = on => { startB.disabled = on; stopB.disabled = !on; $('#cbsTask').disabled = on; };
+  // While a job runs, send the newest login to the server every couple of minutes, so a long job never carries a dead (expired) one.
+  let keepAlive = null;
+  const freshToken = async () => { try { return (getFreshToken ? await getFreshToken() : '') || getToken() || ''; } catch { return getToken() || ''; } };
+  const busy = on => {
+    startB.disabled = on; stopB.disabled = !on; $('#cbsTask').disabled = on;
+    if (keepAlive) { clearInterval(keepAlive); keepAlive = null; }
+    if (on) { keepAlive = setInterval(async () => { const t = await freshToken(); if (t) json('/api/codebase/token', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-pholama-token': t }, body: '{}' }); }, keepAliveMs); if (keepAlive.unref) keepAlive.unref(); }
+  };
 
   function push(e) {
     const d = describe(e); if (!d) return;
@@ -102,7 +109,7 @@ export function mountCodebase(root, deps = {}) {
 
   startB.onclick = async () => {
     const task = $('#cbsTask').value.trim(); if (!task) { say('Write what you want done first.', true); return; }
-    const tk = getToken(); if (!tk) { say('Sign in first. The Codebase uses your Pholama account credits.', true); return; }
+    const tk = await freshToken(); if (!tk) { say('Sign in first. The Codebase uses your Pholama account credits.', true); return; }
     say('Starting...'); busy(true); feed.innerHTML = ''; rows = 0;
     const gh = getGithubToken();
     const r = await json('/api/codebase/start', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-pholama-token': tk, ...(gh ? { 'x-github-token': gh } : {}) }, body: JSON.stringify({ task, kind: $('#cbsKind').value, minutes: Number($('#cbsMinutes').value) || 45 }) });

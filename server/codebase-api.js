@@ -108,6 +108,13 @@ function create(deps) {
         if (r.ok) wipeWhenDone(); else if (!session.state().running) { state.token = ''; state.gh = ''; }
         send(res, r.ok ? 200 : 409, r.ok ? { ok: true, id: r.id } : { error: r.error }); return true;
       }
+      if (p === '/api/codebase/token' && method === 'POST') {
+        // A long job outlives a login (about an hour). The page sends the refreshed one; it only replaces the token of a job that is running right now. Kept in memory, never stored.
+        const tk = String(req.headers['x-pholama-token'] || '').slice(0, 4000);
+        const st = session.state();
+        if (!tk || !st.running || st.done) { send(res, 409, { error: 'No job is running.' }); return true; }
+        state.token = tk; send(res, 200, { ok: true }); return true;
+      }
       if (p === '/api/codebase/answer' && method === 'POST') {
         const r = session.answer(String(body.run || ''), String(body.call || ''), body.allow === true);
         send(res, r.ok ? 200 : 409, r.ok ? { ok: true } : { error: r.error }); return true;

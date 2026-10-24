@@ -1237,7 +1237,7 @@ async function openCodebase() {
   try {
     if (!codebaseScreen) {
       const { mountCodebase } = await import('./codebasescreen.js');
-      codebaseScreen = mountCodebase($('#codebase'), { getToken: () => (typeof Account !== 'undefined' && Account.token && Account.token()) || '', getGithubToken: () => (typeof Account !== 'undefined' && Account.githubToken && Account.githubToken()) || '' });
+      codebaseScreen = mountCodebase($('#codebase'), { getToken: () => (typeof Account !== 'undefined' && Account.token && Account.token()) || '', getFreshToken: () => (typeof Account !== 'undefined' && Account.freshToken ? Account.freshToken() : ''), getGithubToken: () => (typeof Account !== 'undefined' && Account.githubToken && Account.githubToken()) || '' });
     }
     await codebaseScreen.open();
   } catch (e) { $('#codebase').textContent = 'The Codebase could not load: ' + (e && e.message || e); console.warn(e); }

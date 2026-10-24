@@ -46,7 +46,7 @@ const TOKEN = { 'x-pholama-token': 'LOGIN-TOKEN-123' };
 (async () => {
   // ---- who may call ----
   { const s = await boot({ who: 'remote', script: [] });
-    for (const [m, p] of [['GET', '/api/codebase/state'], ['GET', '/api/codebase/grants'], ['POST', '/api/codebase/start'], ['POST', '/api/codebase/stop'], ['POST', '/api/codebase/answer'], ['POST', '/api/codebase/grants'], ['DELETE', '/api/codebase/grants']]) {
+    for (const [m, p] of [['GET', '/api/codebase/state'], ['GET', '/api/codebase/grants'], ['POST', '/api/codebase/start'], ['POST', '/api/codebase/stop'], ['POST', '/api/codebase/answer'], ['POST', '/api/codebase/token'], ['POST', '/api/codebase/grants'], ['DELETE', '/api/codebase/grants']]) {
       const r = await call(s.port, m, p, {}, TOKEN); ok('a remote caller is refused: ' + m + ' ' + p, r.status === 403 && s.cloudCalls.length === 0);
     }
     await s.close(); }
@@ -161,6 +161,20 @@ const TOKEN = { 'x-pholama-token': 'LOGIN-TOKEN-123' };
   { const s = await bootWith({ script: [tool({ name: 'note_', text: 'a' }), tool({ name: 'done', summary: 'ok' })], notepad: null });
     await call(s.port, 'POST', '/api/codebase/start', { task: 'x' }, TOKEN);
     ok('with no Notepad available notes still work', await until(async () => (await call(s.port, 'GET', '/api/codebase/state')).json.done === true) && (await call(s.port, 'GET', '/api/codebase/state')).json.result.ok === true); await s.close(); }
+
+  // ---- a fresh login for a running job ----
+  { let seen = []; const slow = (url, o) => new Promise((res, rej) => { seen.push(o.headers.Authorization); o.signal.addEventListener('abort', () => { const e = new Error('aborted'); e.name = 'AbortError'; rej(e); }); });
+    const s = await boot({ cloud: slow });
+    let r = await call(s.port, 'POST', '/api/codebase/token', {}, { 'x-pholama-token': 'NEW-1' });
+    ok('a new login is refused when no job is running', r.status === 409 && /No job is running/.test(r.json.error) && s.api.state.token === '');
+    await call(s.port, 'POST', '/api/codebase/start', { task: 'x' }, TOKEN); await sleep(60);
+    r = await call(s.port, 'POST', '/api/codebase/token', {}, {});
+    ok('an empty login is refused and the old one stays', r.status === 409 && s.api.state.token === 'LOGIN-TOKEN-123');
+    r = await call(s.port, 'POST', '/api/codebase/token', {}, { 'x-pholama-token': 'NEW-TOKEN-456' });
+    ok('a running job takes the fresh login', r.status === 200 && s.api.state.token === 'NEW-TOKEN-456');
+    ok('and the answer never echoes it', !JSON.stringify(r.json).includes('NEW-TOKEN'));
+    ok('the state shown to the page never contains a login', !JSON.stringify((await call(s.port, 'GET', '/api/codebase/state')).json).includes('TOKEN'));
+    await call(s.port, 'POST', '/api/codebase/stop', {}); await s.close(); }
 
   // ---- Stop ----
   { let release; const slow = (url, o) => new Promise((res, rej) => { o.signal.addEventListener('abort', () => { const e = new Error('aborted'); e.name = 'AbortError'; rej(e); }); release = () => res({ ok: true, status: 200, json: async () => ({ reply: tool({ name: 'done', summary: 'late' }) }) }); });

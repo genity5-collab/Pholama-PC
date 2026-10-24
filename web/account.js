@@ -58,7 +58,13 @@ export function oauthName(user) {
 export const Account = {
   configured: () => !!(C().SUPABASE_URL && C().SUPABASE_ANON_KEY),
   user: () => (session && session.user) || null,
-  token: () => (session && session.access_token) || null,   // sent to the cloud model so it knows who is asking
+  token: () => (session && session.access_token) || null,
+  // A token that is valid for at least 5 more minutes: refreshes first when it is about to expire. Long jobs (Codebase) use this so they never send a dead login.
+  async freshToken() {
+    if (!session) return '';
+    if (session.expires_at && session.expires_at * 1000 - Date.now() < 5 * 60000) await this.refresh();
+    return (session && session.access_token) || '';
+  },   // sent to the cloud model so it knows who is asking
   name: () => { const u = session && session.user; if (!u) return ''; const m = u.user_metadata || {}; return m.name || (u.app_metadata && u.app_metadata.provider === 'discord' ? oauthName(u) : (m.full_name || '')); },
   provider: () => (session && session.user && session.user.app_metadata && session.user.app_metadata.provider) || '',
   isGithub: () => !!(session && session.user && session.user.app_metadata && session.user.app_metadata.provider === 'github'),

@@ -22,8 +22,10 @@ function rig(script, o = {}) {
   r = rig([plain('busy'), plain('busy'), plain('busy'), plain('busy'), tool({ name: 'done', summary: 'x' })]); out = await L.run('t', r.deps);
   ok('four failures in a row: it gives up after 4 tries (1 + 3 retries)', out.ok === false && out.stopped === 'model' && r.calls() === 4);
   ok('and says so plainly, with no provider details', r.events.some(e => e.kind === 'stopped' && /did not answer after a few tries/.test(e.say)) && r.events.every(e => !/502|provider|qwen|http|internal/i.test(JSON.stringify(e))));
-  r = rig([plain('login'), tool({ name: 'done', summary: 'x' })]); out = await L.run('t', r.deps);
-  ok('login problem: not retried, says to sign in', out.stopped === 'login' && r.calls() === 1 && r.sleeps.length === 0 && r.events.some(e => /Sign in/.test(e.say || '')));
+  r = rig([plain('login'), plain('login'), tool({ name: 'done', summary: 'x' })]); out = await L.run('t', r.deps);
+  ok('login problem that stays: tried once more after a wait, then says to sign in', out.stopped === 'login' && r.calls() === 2 && r.sleeps.join() === '6000' && r.events.some(e => /Sign in/.test(e.say || '')));
+  r = rig([plain('login'), tool({ name: 'done', summary: 'fine' })]); out = await L.run('t', r.deps);
+  ok('login that was only expired: a fresh one arrives meanwhile and the job carries on', out.ok === true && r.calls() === 2 && r.events.some(e => /Refreshing your sign-in/.test(e.say || '')));
   r = rig([plain('limit'), tool({ name: 'done', summary: 'x' })]); out = await L.run('t', r.deps);
   ok('out of credits: not retried, says credits come back', out.stopped === 'credits' && r.calls() === 1 && r.events.some(e => /credits/i.test(e.say || '')));
   r = rig([plain('stopped'), tool({ name: 'done', summary: 'x' })]); out = await L.run('t', r.deps);

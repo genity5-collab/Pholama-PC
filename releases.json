@@ -1,6 +1,15 @@
 {
- "latest": "0.9.50",
+ "latest": "0.9.51",
  "releases": [
+  {
+   "version": "0.9.51",
+   "date": "2026-10-24",
+   "title": "Codebase: fixed 'Please sign in' when you are signed in",
+   "notes": [
+    "Codebase used a stored login that could be an hour old and already expired, so it asked you to sign in again. It now refreshes your login before every start.",
+    "Long jobs keep their login fresh while they run, and one expired login no longer ends a job: it waits a moment for a fresh one and carries on."
+   ]
+  },
   {
    "version": "0.9.50",
    "date": "2026-10-24",

@@ -59,9 +59,25 @@ const reply = (status, j) => ({ ok: status < 400, status, json: async () => j })
 function boot(routes, o = {}) {
   const calls = []; const { root, els } = fakePage();
   const fetchFn = async (url, init = {}) => { calls.push({ url, method: init.method || 'GET', headers: init.headers || {}, body: init.body ? JSON.parse(init.body) : null }); const h = routes[(init.method || 'GET') + ' ' + url]; return h ? reply(...(typeof h === 'function' ? h(init) : h)) : reply(404, { error: 'no' }); };
-  const scr = mountCodebase(root, { fetchFn, getToken: () => (o.token === undefined ? 'LOGIN' : o.token), getGithubToken: () => o.gh || '', EventSourceCtor: null });
+  const scr = mountCodebase(root, { fetchFn, getToken: () => (o.token === undefined ? 'LOGIN' : o.token), getFreshToken: o.fresh || null, keepAliveMs: o.keepAliveMs || 120000, getGithubToken: () => o.gh || '', EventSourceCtor: o.es || null });
   return { calls, els, scr };
 }
+
+class FAKE_ES { constructor() { FAKE_ES.last = this; } close() {} }
+// ---- a fresh login (an hour-old one is dead) ----
+{ const { calls, els, scr } = boot({ 'POST /api/codebase/start': [200, { ok: true, id: 'r1' }] }, { token: 'OLD', fresh: async () => 'FRESH' });
+  els['#cbsTask'].value = 'do it'; await els['#cbsStart'].onclick?.();
+  const st = calls.find(c => c.url === '/api/codebase/start');
+  ok('Start sends a freshly refreshed login, not the old stored one', st && st.headers['x-pholama-token'] === 'FRESH', JSON.stringify(st && st.headers)); }
+{ const { calls, els } = boot({ 'POST /api/codebase/start': [200, { ok: true, id: 'r1' }] }, { token: 'OLD', fresh: async () => { throw new Error('refresh failed'); } });
+  els['#cbsTask'].value = 'do it'; await els['#cbsStart'].onclick?.();
+  ok('if refreshing fails it still falls back to the stored login', (calls.find(c => c.url === '/api/codebase/start') || { headers: {} }).headers['x-pholama-token'] === 'OLD'); }
+{ const { calls, els } = boot({ 'POST /api/codebase/start': [200, { ok: true, id: 'r1' }], 'POST /api/codebase/token': [200, { ok: true }] }, { token: 'OLD', fresh: async () => 'FRESH2', keepAliveMs: 20, es: FAKE_ES });
+  els['#cbsTask'].value = 'do it'; await els['#cbsStart'].onclick?.(); await new Promise(r => setTimeout(r, 90));
+  const k = calls.filter(c => c.url === '/api/codebase/token');
+  ok('while a job runs the page keeps sending the newest login', k.length >= 2 && k.every(c => c.headers['x-pholama-token'] === 'FRESH2'));
+  FAKE_ES.last.onmessage({ data: JSON.stringify({ kind: 'end' }) }); await new Promise(r => setTimeout(r, 30)); const n = calls.filter(c => c.url === '/api/codebase/token').length; await new Promise(r => setTimeout(r, 70));
+  ok('and stops sending it once the job is over', calls.filter(c => c.url === '/api/codebase/token').length - n <= 1); }
 
 // ---- Start ----
 { const t = boot({ 'POST /api/codebase/start': [200, { ok: true, id: 'r1' }], 'GET /api/codebase/state': [200, { running: false }] });

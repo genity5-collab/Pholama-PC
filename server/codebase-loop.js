@@ -11,6 +11,7 @@ const T = require('./codebase-tools');
 const MAX_STEPS = 100000;        // not a real limit: a run ends by credits, the time limit, the stuck detector or the Stop button
 const DEFAULT_MAX_MINUTES = 45;  // a long build may run this long; the user can raise it for a run
 const HARD_MAX_MINUTES = 240;    // nobody can set it higher than 4 hours
+const LOGIN_WAIT_MS = 6000;   // after a login error, wait this long for the page to hand over a fresh one
 const RETRY_WAITS = [1000, 3000, 8000];   // pauses before the 2nd, 3rd and 4th try of one model call
 const KEEP_RECENT = 14;          // newest messages kept word for word when the history is compacted
 const COMPACT_AT_CHARS = 36000;  // about 9k tokens: compact before the model's window fills up
@@ -103,11 +104,15 @@ async function run(task, deps) {
     {
       // A model hiccup (busy server, dropped connection, empty reply) is retried a few times with a short wait, so one bad moment does not end a long job.
       // Login, credits and Stop are NOT retried: they will not fix themselves in seconds. The person is told the real reason in plain words, never a provider or model name.
-      let err = null;
+      let err = null, loginRetried = false;
       for (let attempt = 0; attempt <= RETRY_WAITS.length; attempt++) {
         if (deps.signal && deps.signal.aborted) { log('stopped', { reason: 'stop', say: 'Stopped.' }); return { ok: false, stopped: 'stop', steps: step - 1, spent }; }
         try { msgs.splice(0, msgs.length, ...compact(msgs, notes, attempt)); text = await model(msgs, deps.signal); err = null; break; } catch (e) { err = e; }
         const kind = err && err.plain ? err.kind : 'busy';
+        if (kind === 'login' && !loginRetried) {   // the login may just have expired: the page sends a fresh one while we wait, so try once more
+          loginRetried = true; log('retry', { step, say: 'Refreshing your sign-in...' });
+          await (deps.sleep || (ms => new Promise(r => setTimeout(r, ms))))(LOGIN_WAIT_MS); continue;
+        }
         if (kind !== 'busy' && kind !== 'network') break;
         if (attempt < RETRY_WAITS.length) {
           log('retry', { step, say: 'The AI is slow right now. Trying again (' + (attempt + 1) + ' of ' + RETRY_WAITS.length + ')...' });
