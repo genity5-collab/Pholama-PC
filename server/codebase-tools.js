@@ -10,6 +10,7 @@ const TOOLS = {
   // --- memory and eyes: the two most important tools, no approval ---
   note_:       { level: 'none',   cost: 0,  where: 'agent',  does: 'Write to the note board: what it is thinking, what is done, what comes next.' },
   screenshot_: { level: 'none',   cost: 10, where: 'pc',     does: 'Take a screenshot of what the user sees; it is read by the vision sub-agent and put in the edit log.' },
+  next_task:   { level: 'none',   cost: 0,  where: 'agent',  does: 'Say the first task is finished and start the next one. A new note is then required before any edit.' },
   // --- cloud only: nothing touches the PC ---
   cloud_browse:{ level: 'none',   cost: 0,  where: 'cloud',  does: 'Browse and search the web from the cloud. Nothing opens on the PC.' },
   github_read: { level: 'none',   cost: 0,  where: 'cloud',  does: 'Read GitHub: list files, read a file, list commits.' },
