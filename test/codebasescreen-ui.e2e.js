@@ -98,7 +98,15 @@ const { spawn, spawnSync } = require('child_process'), http = require('http'), f
     require('../server/codebase-memory.js').clearSessions();   // earlier runs in this test saved sessions too; start from a clean list
     require('../server/codebase-memory.js').saveSession({ task: 'Old job <b>x</b>', notes: [], result: { ok: true } });
     await ev(`(window.__s.open(), 1)`); await new Promise(r => setTimeout(r, 700));
-    ok('an earlier session shows with its tick, and its text is not live HTML', (await ev(`document.querySelector('#cbsSess').textContent`)).includes('\u2705 Old job <b>x</b>') && (await ev(`document.querySelector('#cbsSess b')`)) === null);
+    ok('an earlier session shows with its tick, and its text is not live HTML', (await ev(`document.querySelector('#cbsSess').textContent`)).includes('Old job <b>x</b>') && (await ev(`document.querySelector('#cbsSess').textContent`)).includes('\u2705') && (await ev(`document.querySelector('#cbsSess b')`)) === null);
+    ok('the session shows its own name', (await ev(`document.querySelector('#cbsSess').textContent`)).includes('Old job'));
+    require('../server/codebase-memory.js').clearSessions(); require('../server/codebase-memory.js').saveSession({ task: 'Named job', work: ['\u2705 edit_file one', '\u274C edit_file two: read-only'], result: { ok: true, summary: 'All done' } });
+    await ev(`(window.__s.open(), 1)`); await new Promise(r => setTimeout(r, 700));
+    await ev(`(document.querySelector('#cbsSess button[data-view]').click(), 1)`); await new Promise(r => setTimeout(r, 700));
+    const wl = await ev(`document.querySelector('#cbsSess .cbs-wl').textContent`);
+    ok('Open shows the auto-saved steps with ticks and crosses and the summary', wl.includes('All done') && wl.includes('\u2705 edit_file one') && wl.includes('\u274C edit_file two'), wl);
+    require('../server/codebase-memory.js').clearSessions(); require('../server/codebase-memory.js').saveSession({ task: 'Old job <b>x</b>', notes: [], result: { ok: true } });
+    await ev(`(window.__s.open(), 1)`); await new Promise(r => setTimeout(r, 700));
     await ev(`(document.querySelector('#cbsSess button[data-sess]').click(), 1)`); await new Promise(r => setTimeout(r, 700));
     ok('deleting a session removes it', (await ev(`document.querySelector('#cbsSess').textContent`)).includes('No sessions yet') && require('../server/codebase-memory.js').listSessions().length === 0);
     ok('no model or provider name appears on the screen', !/qwen|free\.ai|mistral|deepseek/i.test(all));

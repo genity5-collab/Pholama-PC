@@ -1,6 +1,16 @@
 {
- "latest": "0.9.52",
+ "latest": "0.9.53",
  "releases": [
+  {
+   "version": "0.9.53",
+   "date": "2026-10-24",
+   "title": "Codebase: auto-saved work log, named sessions, much better at opening files and folders",
+   "notes": [
+    "Auto memorizer: every step the AI takes is saved for you without it having to write anything, with a green tick for what worked and a red cross for what failed and why.",
+    "Every saved session now has its own name (date, time and task). Open one to see what it did, or delete it whenever you want, one by one or all at once. The AI reads the last session's work when it starts.",
+    "Opening files, folders and web pages works much better: the AI can give the path in any way (path, file, folder, url, file:// links), HTML files open in your browser, folders open in File Explorer, and a missing path is reported clearly."
+   ]
+  },
   {
    "version": "0.9.52",
    "date": "2026-10-24",

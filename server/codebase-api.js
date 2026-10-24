@@ -67,7 +67,7 @@ function create(deps) {
     checkLink: u => require('./sources').checkLink(u),
   });
   const tools = deps.tools || buildTools({ ...deps, media, web, notepad, getGithubToken: deps.getGithubToken || (() => state.gh) });
-  const session = SESSION.create({ model, tools, budget, now, sleep: deps.sleep, getContext: () => MEM.context(), onEnd: x => MEM.saveSession({ task: x.task, notes: x.notes, result: x.result, now }), onResult: r => { if (notepad && typeof notepad.mark === 'function') notepad.mark(r.good, r.what, r.detail).catch(() => {}); } });   // a tick or a cross for every step, written into the Notepad
+  const session = SESSION.create({ model, tools, budget, now, sleep: deps.sleep, getContext: () => MEM.context(), onEnd: x => MEM.saveSession({ task: x.task, notes: x.notes, work: x.work, result: x.result, now }), onResult: r => { if (notepad && typeof notepad.mark === 'function') notepad.mark(r.good, r.what, r.detail).catch(() => {}); } });   // a tick or a cross for every step, written into the Notepad
   // The login lives only as long as the run: when the run ends (done, stopped, out of time or credits) it is wiped.
   const wipeWhenDone = () => { const t = setInterval(() => { const st = session.state(); if (st.done || !st.running) { state.token = ''; state.gh = ''; if (notepad) notepad.finish().catch(() => {}); clearInterval(t); } }, 250); if (t.unref) t.unref(); };
 

@@ -171,11 +171,14 @@ export function mountCodebase(root, deps = {}) {
   }
   async function paintSess(list) {
     const l = list || (await json('/api/codebase/sessions')).j.sessions || [];
-    $('#cbsSess').innerHTML = l.length ? l.map(x => '<li><span class="cbs-gd">' + (x.ok ? '\u2705 ' : '\u274C ') + esc(x.task) + '</span><span class="cbs-gm">' + esc(String(x.at || '').slice(0, 10)) + '</span><button data-sess="' + esc(x.id) + '" title="Delete this session">Delete</button></li>').join('') : '<li class="cbs-gm">No sessions yet.</li>';
+    $('#cbsSess').innerHTML = l.length ? l.map(x => '<li><span class="cbs-gd">' + (x.ok ? '\u2705 ' : '\u274C ') + esc(x.name || x.task) + '</span><span class="cbs-gm">' + esc(String(x.work || 0)) + ' steps saved</span><button data-view="' + esc(x.id) + '" title="Show what it did">Open</button><button data-sess="' + esc(x.id) + '" title="Delete this session">Delete</button><pre class="cbs-wl" id="wl-' + esc(x.id) + '" hidden></pre></li>').join('') : '<li class="cbs-gm">No sessions yet.</li>';
   }
   $('#cbsMemAdd').onclick = async () => { const t = $('#cbsMemText').value.trim(); if (!t) return; const r = await json('/api/codebase/memory', { method: 'POST', headers: H, body: JSON.stringify({ text: t }) }); if (r.ok) { $('#cbsMemText').value = ''; paintMem(r.j.memory); } else say(r.j.error || 'Could not save that.', true); };
   $('#cbsMem').addEventListener('click', async ev => { const b = ev.target.closest && ev.target.closest('button[data-forget]'); if (!b) return; const r = await json('/api/codebase/memory', { method: 'DELETE', headers: H, body: JSON.stringify({ id: b.dataset.forget }) }); paintMem(r.ok ? r.j.memory : undefined); });
-  $('#cbsSess').addEventListener('click', async ev => { const b = ev.target.closest && ev.target.closest('button[data-sess]'); if (!b) return; const r = await json('/api/codebase/sessions', { method: 'DELETE', headers: H, body: JSON.stringify({ id: b.dataset.sess }) }); paintSess(r.ok ? r.j.sessions : undefined); });
+  $('#cbsSess').addEventListener('click', async ev => {
+    const v = ev.target.closest && ev.target.closest('button[data-view]');
+    if (v) { const box = $('#cbsSess').querySelector('pre[id="wl-' + v.dataset.view + '"]'); if (!box) return; if (!box.hidden) { box.hidden = true; return; } const r = await json('/api/codebase/sessions/' + encodeURIComponent(v.dataset.view)); box.textContent = r.ok ? ((r.j.summary ? r.j.summary + '\n\n' : '') + ((r.j.work || []).concat(r.j.notes || [])).join('\n') || 'Nothing was saved for this session.') : 'Could not open it.'; box.hidden = false; return; }
+    const b = ev.target.closest && ev.target.closest('button[data-sess]'); if (!b) return; const r = await json('/api/codebase/sessions', { method: 'DELETE', headers: H, body: JSON.stringify({ id: b.dataset.sess }) }); paintSess(r.ok ? r.j.sessions : undefined); });
   $('#cbsSessClear').onclick = async () => { const r = await json('/api/codebase/sessions', { method: 'DELETE', headers: H, body: JSON.stringify({ all: true }) }); paintSess(r.ok ? r.j.sessions : undefined); };
 
   // Opening the screen: show the folders and usage, and pick up a run that is already going (the page was reloaded).

@@ -21,7 +21,15 @@ $small.Save($env:PH_A,[System.Drawing.Imaging.ImageFormat]::Png); $small.Dispose
 Write-Output "saved"`,
   windows: `
 Get-Process | Where-Object { $_.MainWindowTitle } | ForEach-Object { $_.MainWindowTitle } | Sort-Object -Unique`,
-  open: `Start-Process -FilePath $env:PH_A`,
+  open: `
+$p=$env:PH_A
+if ($p -match '^https?://') { Start-Process -FilePath $p; Write-Output "opened the web page"; exit 0 }
+if (-not (Test-Path -LiteralPath $p)) { Write-Output "ERROR: that path does not exist: $p"; exit 3 }
+$it=Get-Item -LiteralPath $p
+if ($it.PSIsContainer) { Start-Process -FilePath 'explorer.exe' -ArgumentList ('"' + $it.FullName + '"'); Write-Output "opened the folder in File Explorer"; exit 0 }
+$ext=$it.Extension.ToLower()
+if ($ext -eq '.html' -or $ext -eq '.htm') { Start-Process -FilePath ([Uri]$it.FullName).AbsoluteUri; Write-Output "opened the page in the browser"; exit 0 }
+Start-Process -FilePath $it.FullName; Write-Output "opened the file"`,
   notepad: `Start-Process -FilePath 'notepad.exe' -ArgumentList ('"' + $env:PH_A + '"'); Write-Output "opened in Notepad"`,   // the agent's notes window: Notepad itself, with a path that came from Pholama, never from the model
   close: `
 $t=$env:PH_A; $n=0

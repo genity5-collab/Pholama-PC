@@ -26,12 +26,15 @@ function create(deps) {
       if (timer.unref) timer.unref();
       r.pending.set(req.callId, { resolve, timer, tool: req.tool, level: req.level });
     });
+    const workLog = [];   // AUTO MEMORIZER: every step that changed something, saved without the AI having to write it
     const noteLog = [];   // the notes the agent wrote this run, kept for the saved session
-    const emit = e => { if (e && e.kind === 'tool' && e.tool === 'note_') { try { noteLog.push(String(JSON.parse(e.args).text || e.args)); } catch { noteLog.push(String(e.args || '')); } } push(r, e); };
+    const emit = e => { try { if (e && e.kind === 'refused' && e.tool) workLog.push('\u274C ' + e.tool + ': ' + String(e.say || 'not allowed').slice(0, 100)); } catch {}
+      try { if (e && e.kind === 'tool' && e.tool && e.tool !== 'note_' && !/^(screenshot_|remember|forget|next_task)$/.test(e.tool)) { const bad = /^ERROR|refused|blocked/i.test(String(e.result || '')); workLog.push((bad ? '\u274C ' : '\u2705 ') + e.tool + ' ' + String(e.args || '').slice(0, 120) + (bad ? ': ' + String(e.result || '').slice(0, 100) : '')); } } catch {}
+      if (e && e.kind === 'tool' && e.tool === 'note_') { try { noteLog.push(String(JSON.parse(e.args).text || e.args)); } catch { noteLog.push(String(e.args || '')); } } push(r, e); };
     const guardedBudget = { gate: () => (r.stopped ? { ok: false, say: 'Stopped.' } : budget.gate()), spend: n => budget.spend(n) };
     loop.run(text, { model, tools, ask, budget: guardedBudget, emit, now, signal: ac.signal, sleep, onResult, context: typeof getContext === 'function' ? (() => { try { return getContext(); } catch { return ''; } })() : '', maxMinutes: Number(opts && opts.maxMinutes) || undefined }).then(res => { r.result = res; }, () => { r.result = { ok: false, stopped: 'error' }; }).then(() => {
       r.done = true; for (const p of r.pending.values()) { clearTimeout(p.timer); p.resolve({ allowed: false }); } r.pending.clear();
-      if (typeof onEnd === 'function') { try { onEnd({ task: text, notes: noteLog, result: r.result }); } catch {} }   // save the session; a problem here never changes how the run ended
+      if (typeof onEnd === 'function') { try { onEnd({ task: text, notes: noteLog, work: workLog, result: r.result }); } catch {} }   // save the session; a problem here never changes how the run ended
       push(r, { kind: 'end', at: now(), ok: !!(r.result && r.result.ok) });
     });
     return { ok: true, id: r.id };

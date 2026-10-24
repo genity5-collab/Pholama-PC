@@ -101,5 +101,34 @@ const tools = API.buildTools({ win: { execute: async () => ({ ok: true }) }, git
   ok('a refused call is a cross too', got2.length === 1 && got2[0].good === false);
   const calm = await L.run('t', { model: async () => '<tool>{"name":"done","summary":"s"}</tool>', tools: {}, ask: YES, budget: GO, onResult: () => { throw new Error('x'); } });
   ok('a problem in the notes callback never stops the run', calm.ok === true);
+
+  // ---- AUTO MEMORIZER: the work is saved without the AI writing anything, each session has its own name, and it can be deleted ----
+  M.clearSessions();
+  const SES = require('../server/codebase-session.js');
+  const script = ['<tool>{"name":"note_","text":"about to edit two files"}</tool>', '<tool>{"name":"edit_file","path":"C:\\\\p\\\\a.lua"}</tool>', '<tool>{"name":"note_","text":"now the second file"}</tool>', '<tool>{"name":"edit_file","path":"C:\\\\p\\\\b.lua"}</tool>', '<tool>{"name":"done","summary":"two files"}</tool>'];
+  const toolsFake = { note_: async () => 'Noted.', edit_file: async a => (/b\.lua/.test(a.path) ? 'ERROR: read-only folder' : 'Saved.') };
+  const run1 = SES.create({ model: async () => script.shift(), tools: toolsFake, budget: GO, onEnd: x => M.saveSession({ ...x, now: () => Date.UTC(2026, 9, 24, 14, 52) }) });
+  run1.start('Build the shop');
+  // an edit needs the person's Allow; here the test presses it the moment it appears
+  await new Promise(res => { const t = setInterval(() => { const st = run1.state(); for (const p of (st.pending || [])) run1.answer(st.id, p.callId, true); if (st.done) { clearInterval(t); res(); } }, 20); });
+  const a1 = M.listSessions()[0], full = M.getSession(a1.id);
+  ok('the work was saved automatically, with only its own planning note, nothing else to write', full.work.length === 2 && full.notes.length === 2, JSON.stringify(full));
+  ok('a good step has a tick and a bad one has a cross and why', /^\u2705 edit_file/.test(full.work[0]) && /^\u274C edit_file.*read-only folder/.test(full.work[1]), JSON.stringify(full.work));
+  ok('the session has its own readable name', full.name === '2026-10-24 14:52 Build the shop', full.name);
+  const second = M.saveSession({ task: 'Build the shop', result: { ok: true }, now: () => Date.UTC(2026, 9, 24, 14, 52) });
+  ok('the same task in the same minute still gets a different name', M.getSession(second.id).name === '2026-10-24 14:52 Build the shop (2)', M.getSession(second.id).name);
+  ok('it can be opened by its name', M.getSession('2026-10-24 14:52 Build the shop (2)').id === second.id);
+  ok('the list shows the name and how many steps were saved', M.listSessions().every(x => x.name) && M.listSessions().some(x => x.work === 2));
+  ok('the next run is told what the last session did', /LAST SESSION WORK \(auto-saved\)/.test(M.context()) || M.listSessions()[0].work === 0);
+  ok('it can be deleted by name when the user says so', M.deleteSession('2026-10-24 14:52 Build the shop (2)').ok && !M.getSession(second.id));
+  ok('a secret in the work log is hidden', (() => { const x = M.saveSession({ task: 't', work: ['\u2705 run ghp_abcdefghijklmnopqrstuvwxyz0123456789'], result: {} }); return !/ghp_abcdefghij/.test(JSON.stringify(M.getSession(x.id))); })());
+  ok('the work log is capped at 60 steps', M.getSession(M.saveSession({ task: 'long', work: Array.from({ length: 200 }, (_, i) => 'w' + i), result: {} }).id).work.length === 60);
+  // ---- opening files, folders and pages is forgiving ----
+  ok('open_window takes "path"', P.plan('open_window', { path: 'https://a.test' }).web === true);
+  ok('open_window takes "url", "file" and "folder" too', P.plan('open_window', { url: 'https://b.test' }).target === 'https://b.test' && !/Say what to open/.test(P.plan('open_window', { file: 'C:\\zz\\q.html' }).say || ''));
+  ok('open_window takes a quoted address', P.plan('open_window', { target: '"https://c.test"' }).target === 'https://c.test');
+  ok('open_window with nothing says exactly what to give', /target/.test(P.plan('open_window', {}).say));
+  ok('a file:// link is turned into a normal path, then checked against the allowed folders', /outside the folders|allowed/i.test(P.plan('open_window', { target: 'file:///C:/not-allowed/x.html' }).say || ''));
+  ok('other schemes are still refused', !P.plan('open_window', { target: 'ms-settings:' }).ok);
   console.log(bad ? bad + ' FAILED' : 'ALL PASSED'); process.exit(bad ? 1 : 0);
 })();

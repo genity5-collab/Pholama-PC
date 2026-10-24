@@ -94,7 +94,14 @@ const PLANNERS = {
     return { ok: true, kind: 'delete', path: r.p };
   },
   open_window(a) {
-    if (!isStr(a.target) || !a.target.trim() || a.target.length > 500) return no('Say what to open.');
+    // Models name this field many ways. Take the first one that has text, then tidy it: quotes, file:// links, forward slashes.
+    let t = ['target', 'path', 'file', 'filename', 'folder', 'directory', 'dir', 'url', 'html', 'html_file', 'page', 'app'].map(k => a[k]).find(v => isStr(v) && v.trim());
+    if (!t) return no('Say what to open: give "target" as a full file path, a folder path or a web address.');
+    t = t.trim().replace(/^["'`]+|["'`]+$/g, '');
+    if (/^file:\/\/\/?/i.test(t)) { try { t = decodeURIComponent(t.replace(/^file:\/\/\/?/i, '')); } catch { t = t.replace(/^file:\/\/\/?/i, ''); } }
+    if (/^[a-z]:[\\/]/i.test(t) || /^\\\\/.test(t)) t = t.replace(/\//g, '\\');   // a Windows path: backslashes
+    a = { ...a, target: t };
+    if (!isStr(a.target) || !a.target.trim() || a.target.length > 500) return no('That is too long. Give a shorter path.');
     if (/^[a-z][a-z0-9+.-]+:/i.test(a.target) && !/^https?:\/\//i.test(a.target))   // a scheme has 2+ letters; a single letter is a drive (C:\...)
       return no('Only web pages (http or https) and granted files can be opened.');
     if (/^https?:\/\//i.test(a.target)) return { ok: true, kind: 'open', target: a.target, web: true };
