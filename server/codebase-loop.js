@@ -30,6 +30,19 @@ RULES
 - Build the whole thing, not a small demo. Keep going until the task is truly finished and checked, then call done.
 - Look at your work: read files back with pull_file and take screenshot_ to check the result before you say done.
 - When everything is finished call {"name":"done","summary":"..."}.
+EXAMPLES (copy the shape exactly; one line, double quotes):
+<tool>{"name":"note_","text":"Open YouTube, then check it with a screenshot."}</tool>
+<tool>{"name":"pc_browse","url":"https://www.youtube.com"}</tool>
+<tool>{"name":"screenshot_"}</tool>
+<tool>{"name":"open_window","target":"notepad"}</tool>
+<tool>{"name":"close_window","title":"exact title from OPEN WINDOWS"}</tool>
+<tool>{"name":"pull_file","path":"C:\\folder\\a.js"}</tool>
+<tool>{"name":"edit_file","path":"C:\\folder\\a.js","content":"whole new file text"}</tool>
+<tool>{"name":"create_item","path":"C:\\folder\\new.txt","content":"text"}</tool>
+<tool>{"name":"user_pc","action":"click","x":400,"y":300}</tool>
+<tool>{"name":"cloud_browse","url":"https://example.com"}</tool>
+<tool>{"name":"done","summary":"what you did"}</tool>
+To open a website for the user use pc_browse with a full https address. Never answer with plain text, always one <tool> line.
 TOOLS: ` + T.list().map(t => t.name).join(', ') + ', done';
 
 // Keeps the system prompt, the task, a running summary and the newest messages. The notes the agent wrote are never dropped: they are its memory.
@@ -42,17 +55,25 @@ function compact(msgs, notes) {
 }
 
 function parse(text) {
-  const m = TOOL_RE.exec(String(text || ''));
-  if (!m) return null;
-  try {
-    const o = JSON.parse(m[1]); if (!o || typeof o.name !== 'string') return null;
-    // The model often writes {"name":"x","args":{...}} or {"name":"x","arguments":{...}}; the real arguments are inside. Flat form still works.
-    for (const k of ['args', 'arguments']) {
-      const w = o[k];
-      if (w && typeof w === 'object' && !Array.isArray(w)) { const { [k]: _drop, ...rest } = o; return { ...rest, ...w, name: o.name }; }
-    }
-    return o;
-  } catch { return null; }
+  const raw = String(text || '');
+  // The tag with or without the closing tag, a code fence, or a bare JSON line with a "name".
+  let body = null;
+  const m = TOOL_RE.exec(raw) || /<tool>\s*(\{[\s\S]*\})/.exec(raw);
+  if (m) body = m[1];
+  else { const f = /```(?:json|tool)?\s*(\{[\s\S]*?\})\s*```/.exec(raw) || /(\{\s*"name"\s*:[\s\S]*\})/.exec(raw); if (f) body = f[1]; }
+  if (!body) return null;
+  const tryParse = t => { try { return JSON.parse(t); } catch { return null; } };
+  let o = tryParse(body);
+  if (!o) { for (let end = body.lastIndexOf('}'); end > 0 && !o; end = body.lastIndexOf('}', end - 1)) o = tryParse(body.slice(0, end + 1)); }   // trailing words after the JSON
+  if (!o) o = tryParse(body.replace(/,\s*([}\]])/g, '$1').replace(/'/g, '"'));   // trailing commas, single quotes
+  if (!o || typeof o !== 'object' || Array.isArray(o)) return null;
+  if (typeof o.name !== 'string') { const n = o.tool || o.function || o.action_name; if (typeof n === 'string') o.name = n; else return null; }
+  // The model often writes {"name":"x","args":{...}} or {"name":"x","arguments":{...}}; the real arguments are inside. Flat form still works.
+  for (const k of ['args', 'arguments', 'parameters', 'input']) {
+    const w = o[k];
+    if (w && typeof w === 'object' && !Array.isArray(w)) { const { [k]: _drop, ...rest } = o; return { ...rest, ...w, name: o.name }; }
+  }
+  return o;
 }
 
 // deps: { model(messages) -> text, tools{name:async(args)->string}, ask(req)->{allowed,callId}, budget{gate(),spend(n)}, emit(event), now() }
@@ -74,7 +95,7 @@ async function run(task, deps) {
     let text;
     try { msgs.splice(0, msgs.length, ...compact(msgs, notes)); text = await model(msgs, deps.signal); } catch (e) { log('stopped', { reason: 'model', say: 'The model could not answer. Try again in a moment.' }); return { ok: false, stopped: 'model', steps: step - 1, spent }; }   // no provider details to the user
     const call = parse(text);
-    if (!call) { if (++misses >= MAX_MISS) { log('stopped', { reason: 'stuck', say: 'The agent could not decide what to do. Try rewording the task.' }); return { ok: false, stopped: 'stuck', steps: step, spent }; } log('retry', { step, say: 'The model did not pick a tool; asking again.' }); msgs.push({ role: 'assistant', content: String(text || '').slice(0, 500) }, { role: 'user', content: 'Reply with exactly one <tool>{"name":...}</tool> line.' }); continue; }
+    if (!call) { if (++misses >= MAX_MISS) { log('stopped', { reason: 'stuck', say: 'The agent could not decide what to do. Try rewording the task.' }); return { ok: false, stopped: 'stuck', steps: step, spent }; } log('retry', { step, say: 'The model did not pick a tool; asking again.' }); msgs.push({ role: 'assistant', content: String(text || '').slice(0, 500) }, { role: 'user', content: 'Reply with exactly one tool line, nothing before or after it. Your last reply had no tool. Like this:\n<tool>{"name":"pc_browse","url":"https://www.youtube.com"}</tool>\nPick the tool that does the next step of the task. If the task is finished: <tool>{"name":"done","summary":"what you did"}</tool>' }); continue; }
     misses = 0;
     msgs.push({ role: 'assistant', content: '<tool>' + JSON.stringify(call) + '</tool>' });
     const { name, ...args } = call;
@@ -112,7 +133,8 @@ async function run(task, deps) {
 
     // 5. run it (a tool that throws is an ordinary result, not a crash)
     let result;
-    try { result = await tools[name](args, { signal: deps.signal }); } catch (e) { result = 'ERROR: ' + String(e && e.message || e).slice(0, 200); }
+    let shotId = null;
+    try { result = await tools[name](args, { signal: deps.signal, shot: id => { shotId = id; } }); } catch (e) { result = 'ERROR: ' + String(e && e.message || e).slice(0, 200); }
     tick = now();
     if (name === 'note_') { mem.lastNoteAt = tick; mem.noteTaskId = mem.taskId; notes.push(String(args.text || '').slice(0, 300)); if (notes.length > 40) notes.shift(); }
     if (name === 'next_task') mem.taskId++;   // the LOOP counts tasks, so the model cannot skip the note by leaving a flag out
@@ -127,7 +149,7 @@ async function run(task, deps) {
 
     // 6 + 7 + 8. hide secrets, write the edit log, hand back to the model
     const clean = T.redact(typeof result === 'string' ? result : JSON.stringify(result)).slice(0, MAX_RESULT);
-    log('tool', { step, tool: name, cost: meta.cost, args: T.redact(JSON.stringify(args)).slice(0, 400), result: clean });
+    log('tool', { step, tool: name, cost: meta.cost, args: T.redact(JSON.stringify(args)).slice(0, 400), result: clean, ...(shotId && /^[a-f0-9]{16}$/.test(shotId) ? { shot: shotId } : {}) });
     msgs.push({ role: 'user', content: 'RESULT: ' + clean });
   }
   log('stopped', { reason: 'steps', say: 'Reached the step limit.' });

@@ -38,6 +38,7 @@ function buildTools(deps) {
       if (pl.kind === 'github_read' || pl.kind === 'github_write') r = await github.execute(pl, { token: getGithubToken(), fetchFn });
       else if (pl.kind === 'make') r = media && typeof media.execute === 'function' ? await media.execute(pl, { signal: ctx && ctx.signal }) : { ok: false, text: 'Making files is not available right now.' };   // a generator never reaches the Windows runner
       else r = await win.execute(pl, { opened, readImage });
+      if (r && r.ok && r.shot && ctx && typeof ctx.shot === 'function') ctx.shot(r.shot);   // the loop attaches it to the log row
       return r && r.ok ? String(r.text == null ? 'Done.' : r.text) : 'ERROR: ' + String((r && r.text) || 'it did not work');
     };
   }
@@ -77,6 +78,11 @@ function create(deps) {
         if (!stop) { res.end('event: empty\ndata: {}\n\n'); return true; }
         res.write(': hello\n\n'); const beat = setInterval(() => { try { res.write(': \n\n'); } catch {} }, 20000); if (beat.unref) beat.unref();
         const done = () => { clearInterval(beat); stop(); }; req.on('close', done); res.on('error', done); return true;
+      }
+      if (p.startsWith('/api/codebase/shot/') && method === 'GET') {   // a screenshot the agent took, from memory; only a real id works
+        const img = require('./codebase-shots').get(p.slice('/api/codebase/shot/'.length));
+        if (!img) { send(res, 404, { ok: false }); return true; }
+        res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Length': img.length }); res.end(img); return true;
       }
       if (p === '/api/codebase/usage' && method === 'GET') {   // the usage bar on the page: 5,000 / 7-hour rests / 15,000 per month
         let tz = 'UTC'; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch {}

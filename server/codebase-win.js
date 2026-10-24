@@ -100,9 +100,10 @@ async function execute(pl, ctx = {}) {
       const f = path.join(os.tmpdir(), 'pholama-shot-' + process.pid + '-' + Date.now() + '.png');
       const r = await ps('screenshot', { a: f, n: pl.scale });
       if (!r.ok) return r;
-      let say = 'Screenshot taken.'; try { if (ctx.readImage) say = await ctx.readImage(f); } finally { try { fs.unlinkSync(f); } catch {} }
+      let say = 'Screenshot taken.', shot = null;
+      try { try { shot = require('./codebase-shots').put(fs.readFileSync(f)); } catch {} if (ctx.readImage) say = await ctx.readImage(f); } finally { try { fs.unlinkSync(f); } catch {} }
       const w = await ps('windows'); const titles = w.ok ? w.text.split(/\r?\n/).filter(Boolean).filter(t => !ctx.opened || ctx.opened.has(t)) : [];
-      return { ok: true, text: say + '\nOPEN WINDOWS (opened by the agent, closable): ' + JSON.stringify(titles) };
+      return { ok: true, shot, text: say + '\nOPEN WINDOWS (opened by the agent, closable): ' + JSON.stringify(titles) };
     }
     case 'pull': return ps('read', { a: pl.from });
     case 'write': return ps(pl.append ? 'append' : 'write', { a: pl.path, stdin: pl.content });

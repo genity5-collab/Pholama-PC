@@ -178,7 +178,15 @@ function rig(script, o = {}) {
   ok('parser: plain', L.parse('<tool>{"name":"a"}</tool>').name === 'a');
   ok('parser: with text around it', L.parse('Sure!\n<tool>{"name":"a","x":1}</tool> thanks').x === 1);
   ok('parser: broken json', L.parse('<tool>{name:a}</tool>') === null);
-  ok('parser: no tag', L.parse('{"name":"a"}') === null);
+  ok('parser: a bare JSON line without the tag is accepted (small models drop it)', L.parse('{"name":"a"}').name === 'a');
+  ok('parser: plain words are not a call', L.parse('I cannot do that') === null && L.parse('') === null && L.parse(null) === null);
+  ok('parser: no closing tag', L.parse('Sure! <tool>{"name":"pc_browse","url":"https://y.com"}').url === 'https://y.com');
+  ok('parser: code fence', L.parse('```json\n{"name":"screenshot_"}\n```').name === 'screenshot_');
+  ok('parser: arguments / parameters objects are flattened', L.parse('{"name":"pc_browse","arguments":{"url":"https://a.com"}}').url === 'https://a.com' && L.parse('<tool>{"tool":"pc_browse","parameters":{"url":"https://a.com"}}</tool>').name === 'pc_browse');
+  ok('parser: trailing comma and words after the JSON', L.parse('<tool>{"name":"note_","text":"x",}</tool>').text === 'x' && L.parse('<tool>{"name":"done","summary":"s"}</tool> thanks!').name === 'done');
+  ok('parser: broken JSON is not a call', L.parse('<tool>{bad json}</tool>') === null);
+  ok('the retry message still starts with the prefix the billing code recognises as the loop\'s own words', /content: 'Reply with exactly/.test(require('fs').readFileSync(require('path').join(__dirname, '..', 'server', 'codebase-loop.js'), 'utf8')));
+  ok('the prompt shows the model an example for opening a website', /pc_browse","url":"https:\/\/www\.youtube\.com/.test(L.SYSTEM) && /Never answer with plain text/.test(L.SYSTEM));
   ok('parser: name must be text', L.parse('<tool>{"name":5}</tool>') === null);
   ok('parser: empty', L.parse('') === null && L.parse(null) === null);
 

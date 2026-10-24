@@ -14,7 +14,8 @@ export function describe(e) {
     case 'tool': {
       if (tool === 'note_') return { tone: 'note', tag: 'NOTE', text: clip(String(e.args || '').replace(/^\{.*?"(?:text|content|note|summary|message)":"/, '').replace(/"\}*$/, ''), 400) || 'Note' };
       const bad = /^(REFUSED|ERROR):/.test(String(e.result || ''));
-      return { tone: bad ? 'bad' : 'ok', tag: 'TOOL', text: tool + (e.args ? ' ' + clip(e.args, 140) : ''), result: clip(e.result, 300), cost: e.cost || 0 };
+      if (tool === 'screenshot_') return { tone: bad ? 'bad' : 'ok', tag: 'SCREEN', text: 'Screenshot' + (e.cost ? '' : ''), result: clip(String(e.result || '').split('\nOPEN WINDOWS')[0], 500), cost: e.cost || 0, shot: /^[a-f0-9]{16}$/.test(String(e.shot || '')) ? e.shot : '' };
+      return { tone: bad ? 'bad' : 'ok', tag: 'TOOL', text: tool + (e.args ? ' ' + clip(e.args, 220) : ''), result: clip(e.result, 500), cost: e.cost || 0 };
     }
     case 'ask': return { tone: 'ask', tag: 'ASK', text: tool + ' is waiting for you', callId: e.callId, strict: e.level === 'strict', args: clip(e.args, 400), tool };
     case 'answered': return { tone: 'info', tag: 'YOU', text: e.allowed === false ? 'You said No' : 'You said Yes' };
@@ -35,7 +36,8 @@ export function rowHtml(d) {
       '<div class="cbs-btns"><button class="cbs-allow" data-allow="1">Allow</button><button class="cbs-deny" data-allow="0">Deny</button></div></div>'
     : '';
   return '<li class="cbs-row ' + esc(d.tone) + '"><span class="cbs-tag">' + esc(d.tag) + '</span><span class="cbs-txt">' + esc(d.text) + '</span>' +
-    (d.cost ? '<span class="cbs-cost">' + esc(d.cost) + ' credits</span>' : '') + (d.result ? '<div class="cbs-res">' + esc(d.result) + '</div>' : '') + card + '</li>';
+    (d.cost ? '<span class="cbs-cost">' + esc(d.cost) + ' credits</span>' : '') + (d.result ? '<div class="cbs-res">' + esc(d.result) + '</div>' : '') +
+    (d.shot ? '<a class="cbs-shot" href="/api/codebase/shot/' + esc(d.shot) + '" target="_blank" rel="noopener"><img alt="Screenshot the AI took" loading="lazy" src="/api/codebase/shot/' + esc(d.shot) + '"></a>' : '') + card + '</li>';
 }
 
 // A short, calm line about how the run ended. Never a model or provider name.

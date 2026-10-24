@@ -1,6 +1,16 @@
 {
- "latest": "0.9.47",
+ "latest": "0.9.48",
  "releases": [
+  {
+   "version": "0.9.48",
+   "date": "2026-10-24",
+   "title": "Codebase picks tools better, shows its screenshots, and everything is bigger",
+   "notes": [
+    "Codebase now gets a clear list of tools with examples, and understands the model's answer even when it forgets the exact format. Opening a website like YouTube works.",
+    "Every screenshot the AI takes now appears in the Codebase feed as a picture you can click to enlarge. They are kept in memory only, never saved to disk.",
+    "The Codebase screen and the main chat are larger: bigger text, a wider chat, a taller message box and a bigger send button."
+   ]
+  },
   {
    "version": "0.9.47",
    "date": "2026-10-24",

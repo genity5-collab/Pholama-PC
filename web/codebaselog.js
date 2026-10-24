@@ -12,7 +12,7 @@ export function toRow(ev) {
   switch (ev.kind) {
     case 'tool': {
       if (ev.tool === 'note_') return { kind: 'note', status: 'ok', t, text: clip(ev.result || ev.args, 600), tool: 'note_' };
-      if (ev.tool === 'screenshot_') return { kind: 'screenshot', status: 'ok', t, text: clip(ev.result, 800), cost: ev.cost || 0, tool: 'screenshot_' };
+      if (ev.tool === 'screenshot_') return { kind: 'screenshot', status: 'ok', t, text: clip(ev.result, 800), cost: ev.cost || 0, tool: 'screenshot_', shot: /^[a-f0-9]{16}$/.test(String(ev.shot || '')) ? ev.shot : '' };
       return { kind: 'tool', status: 'ok', t, tool: ev.tool, text: clip(ev.args, 200), result: clip(ev.result, 600), cost: ev.cost || 0 };
     }
     case 'ask':     return { kind: 'tool', status: 'proposed', id: ev.callId, t, tool: ev.tool, text: clip(ev.args, 200), level: ev.level };
