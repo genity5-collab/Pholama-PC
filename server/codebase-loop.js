@@ -112,12 +112,13 @@ async function run(task, deps) {
 
     // 5. run it (a tool that throws is an ordinary result, not a crash)
     let result;
-    try { result = await tools[name](args); } catch (e) { result = 'ERROR: ' + String(e && e.message || e).slice(0, 200); }
+    try { result = await tools[name](args, { signal: deps.signal }); } catch (e) { result = 'ERROR: ' + String(e && e.message || e).slice(0, 200); }
     tick = now();
     if (name === 'note_') { mem.lastNoteAt = tick; mem.noteTaskId = mem.taskId; notes.push(String(args.text || '').slice(0, 300)); if (notes.length > 40) notes.shift(); }
     if (name === 'next_task') mem.taskId++;   // the LOOP counts tasks, so the model cannot skip the note by leaving a flag out
     if (T.isEditing(name)) mem.lastEditAt = tick;
-    if (meta.cost) { const sp = budget.spend(meta.cost); spent += meta.cost; if (sp && sp.ok === false) { log('stopped', { reason: 'budget', say: 'Out of credits for now.' }); return { ok: false, stopped: 'budget', steps: step, spent }; } }
+    const failedCall = typeof result === 'string' && /^(REFUSED|ERROR):/.test(result);   // a refused or failed call produced nothing, and the cloud refunds failed generators: it is not counted
+    if (meta.cost && !failedCall) { const sp = budget.spend(meta.cost); spent += meta.cost; if (sp && sp.ok === false) { log('stopped', { reason: 'budget', say: 'Out of credits for now.' }); return { ok: false, stopped: 'budget', steps: step, spent }; } }
     // A tool that keeps answering REFUSED / ERROR for the same call is stuck just like a refused call: each try is a paid request.
     { const bad = typeof result === 'string' && /^(REFUSED|ERROR):/.test(result), key = name + ':' + (bad ? result.slice(0, 80) : '');
       if (bad) { badCount = key === lastBad ? badCount + 1 : 1; lastBad = key; } else { badCount = 0; lastBad = ''; }

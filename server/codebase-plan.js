@@ -106,9 +106,33 @@ const PLANNERS = {
   },
   terminal_open(a) { return shell(a, 'terminal'); },
   windows_powershell(a) { return shell(a, 'powershell'); },
+  // --- generators: the file is saved on the PC, so the destination is checked for WRITE access BEFORE any credit is spent ---
+  make_image(a) { return makePlan('image', a); },
+  make_speech(a) { return makePlan('speech', a); },
+  make_music(a) { return makePlan('music', a); },
+  make_3d(a) { return makePlan('3d', a); },
   github_read(a) { return require('./codebase-github').plan('github_read', a); },
   github_write(a) { return require('./codebase-github').plan('github_write', a); },
 };
+// What each generator may save as. The extension is fixed per kind (never chosen by the model), so a generator can never write a script or program.
+const MAKE_EXT = { image: ['.png'], speech: ['.wav'], music: ['.wav', '.mp3'], '3d': ['.glb', '.obj'] };
+const MAKE_PROMPT_MAX = 1000;
+function makePlan(what, a) {
+  const ext = MAKE_EXT[what];
+  if (what !== '3d') {
+    if (!isStr(a.prompt) || !a.prompt.trim()) return no(what === 'speech' ? 'Give the text to speak in "prompt".' : 'Describe what to make in "prompt".');
+    if (a.prompt.length > MAKE_PROMPT_MAX) return no('Keep the description under ' + MAKE_PROMPT_MAX + ' characters.');
+  } else if (!isStr(a.image_url) || !/^https:\/\/(?:api\.)?free\.ai\/[^\s]{1,500}$/.test(a.image_url)) return no('make_3d needs "image_url": the link that make_image returned.');
+  if (!isStr(a.path) || !a.path.trim()) return no('Give "path": where to save it, for example C:\\project\\' + (what === 'image' ? 'logo.png' : what === 'speech' ? 'voice.wav' : what === 'music' ? 'theme.wav' : 'model.glb') + '.');
+  const e = path.extname(a.path).toLowerCase();
+  if (!ext.includes(e)) return no('A ' + what + ' file must end in ' + ext.join(' or ') + '.');
+  const r = needPath(a, 'path', 'write'); if (!r.ok) return r;
+  if (require('fs').existsSync(r.p)) return no('That file already exists. Pick a new name so nothing is overwritten.');
+  const out = { ok: true, kind: 'make', what, to: r.p, prompt: what === '3d' ? '' : a.prompt.trim() };
+  if (what === '3d') out.image_url = a.image_url;
+  if (what === 'music') out.seconds = Math.min(30, Math.max(5, Math.floor(Number(a.seconds)) || 15));
+  return out;
+}
 function shell(a, kind) {
   if (!isStr(a.command) || !a.command.trim()) return no('Give the command to run.');
   if (a.command.length > MAX_CMD) return no('That command is too long (limit ' + MAX_CMD + ' characters).');

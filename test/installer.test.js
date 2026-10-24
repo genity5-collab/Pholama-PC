@@ -7,11 +7,11 @@ const ok = (n, c) => { if (c) { pass++; console.log('PASS ' + n); } else { fail+
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'inst-'));
 const w = (p, t = 'x') => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, t); };
 
-// a fake "download": a tarball with a Pholama-main folder
-function makeTar(name, files) {
+// a fake "download": a tarball whose top folder is named like GitHub names it (the repo is Pholama-PC, so Pholama-PC-main)
+function makeTar(name, files, top = 'Pholama-PC-main') {
   const src = path.join(root, 'src-' + name); fs.rmSync(src, { recursive: true, force: true });
-  for (const f of files) w(path.join(src, 'Pholama-main', f), 'v:' + name);
-  const out = path.join(root, name + '.tgz'); cp.execFileSync('tar', ['-czf', out, '-C', src, 'Pholama-main']); return out;
+  for (const f of files) w(path.join(src, top, f), 'v:' + name);
+  const out = path.join(root, name + '.tgz'); cp.execFileSync('tar', ['-czf', out, '-C', src, top]); return out;
 }
 const FULL = ['server/cli.js', 'server/server.js', 'models.pc.json', 'start.sh', 'web/icon-512.png'];
 const good = makeTar('good', FULL), noCli = makeTar('nocli', FULL.filter(f => f !== 'server/cli.js')), noModels = makeTar('nomodels', FULL.filter(f => f !== 'models.pc.json'));
@@ -54,6 +54,32 @@ for (const [name, tarball, extra] of [['a download that is not a tarball', bad, 
   ok(name + ': the existing install is untouched', fs.existsSync(path.join(h, 'Pholama', 'my-marker.txt')) && fs.readFileSync(path.join(h, 'Pholama', 'server/cli.js'), 'utf8') === before);
   ok(name + ': the user is told what happened and no success message is shown', /(Could not|damaged|incomplete)/.test(r.out) && !/Installed\./.test(r.out));
 }
+// 3b. the top folder's name must not matter (GitHub names it after the repo and branch, and the repo has been renamed before)
+for (const top of ['Pholama-PC-main', 'Pholama-main', 'Something-Else-main', 'x']) {
+  h = homeN('top-' + top); r = install(makeTar('top-' + top, FULL, top), h);
+  ok('a download whose folder is called "' + top + '" installs', r.code === 0 && FULL.every(f => fs.existsSync(path.join(h, 'Pholama', f))) && /Installed\./.test(r.out), r.out.slice(-200));
+}
+// 3c. the exact failure that was reported: the program is not in the folder the old script looked in
+{ const src = path.join(root, 'src-nested'); fs.rmSync(src, { recursive: true, force: true }); for (const f of FULL) w(path.join(src, 'Pholama-PC-main', f), 'nested');
+  const out = path.join(root, 'nested.tgz'); cp.execFileSync('tar', ['-czf', out, '-C', src, 'Pholama-PC-main']);
+  h = homeN('nested'); r = install(out, h); ok('the real GitHub layout (Pholama-PC-main) installs, not "incomplete"', r.code === 0 && !/incomplete/.test(r.out)); }
+// 3d. a download with no program anywhere is still refused, and an existing install survives
+{ const src = path.join(root, 'src-empty'); fs.rmSync(src, { recursive: true, force: true }); w(path.join(src, 'Pholama-PC-main', 'README.md'), 'only a readme');
+  const out = path.join(root, 'empty.tgz'); cp.execFileSync('tar', ['-czf', out, '-C', src, 'Pholama-PC-main']);
+  h = homeN('emptydl'); install(good, h); w(path.join(h, 'Pholama', 'my-marker.txt'), 'KEEP'); r = install(out, h);
+  ok('a download with no program in it is refused and nothing is changed', r.code !== 0 && /incomplete/.test(r.out) && fs.existsSync(path.join(h, 'Pholama', 'my-marker.txt'))); }
+// 3e. older unsuccessful attempts are cleaned up
+{ h = homeN('half'); w(path.join(h, 'Pholama', 'junk-from-failed-run.tmp')); w(path.join(h, 'Pholama', 'web/half.js')); w(path.join(h, 'Pholama', 'node_modules/keep/x.js'), 'KEEP');
+  r = install(good, h);
+  ok('a half-finished install (no cli.js) is cleaned, then a fresh install succeeds', r.code === 0 && !fs.existsSync(path.join(h, 'Pholama', 'junk-from-failed-run.tmp')) && !fs.existsSync(path.join(h, 'Pholama', 'web/half.js')) && FULL.every(f => fs.existsSync(path.join(h, 'Pholama', f))));
+  ok('it tells the user it cleaned up', /Cleaned up leftover files/.test(r.out));
+  ok('node_modules is kept while cleaning', fs.readFileSync(path.join(h, 'Pholama', 'node_modules/keep/x.js'), 'utf8') === 'KEEP'); }
+{ h = homeN('half2'); w(path.join(h, 'Pholama', 'leftover.tmp')); w(path.join(h, '.pholama', 'models/keep.gguf'), 'MODEL'); install(noCli, h);
+  ok('cleaning a half-finished install never touches models or chats', fs.readFileSync(path.join(h, '.pholama/models/keep.gguf'), 'utf8') === 'MODEL'); }
+{ h = homeN('workinginstall'); install(good, h); w(path.join(h, 'Pholama', 'my-marker.txt'), 'KEEP'); install(noCli, h);
+  ok('a WORKING install is never "cleaned" by the sweep (only a broken download fails, nothing is lost)', fs.existsSync(path.join(h, 'Pholama', 'my-marker.txt')) && fs.existsSync(path.join(h, 'Pholama', 'server/cli.js'))); }
+{ h = homeN('quiet'); r = install(good, h); ok('a clean first install does not claim it cleaned anything', !/Cleaned up/.test(r.out)); }
+
 // 4. a broken download on a FIRST install leaves nothing behind
 h = homeN('fresh'); r = install(noCli, h);
 ok('a broken first install creates no app folder', !fs.existsSync(path.join(h, 'Pholama')));
@@ -63,10 +89,19 @@ ok('a broken first install creates no command', !fs.existsSync(path.join(h, '.lo
 const ps = fs.readFileSync(path.join(__dirname, '..', 'install', 'install.ps1'), 'utf8');
 ok('windows: the download is wrapped in try/catch', /try \{\s*\n\s*Invoke-WebRequest \$zip[\s\S]*?\} catch/.test(ps));
 ok('windows: it verifies the three key files before touching the old install', ps.indexOf("'server\\cli.js','server\\server.js','models.pc.json'") > 0 && ps.indexOf('The download was incomplete') < ps.indexOf('Copy-Item (Join-Path $src'));
-ok('windows: stale files are removed only after the checks pass', ps.indexOf('The download was incomplete') < ps.indexOf('Remove-Item -Recurse -Force -ErrorAction SilentlyContinue'));
+ok('windows: the reinstall wipe of the old app runs only after the download checks pass', ps.indexOf('The download was incomplete') < ps.indexOf("Where-Object { $_.Name -notin @('node_modules') } | Remove-Item"));
 ok('windows: it verifies the result after copying', /Install failed: \$f is missing/.test(ps));
 ok('windows: node_modules is kept when cleaning', /-notin @\('node_modules'\)/.test(ps));
 ok('windows: no Remove-Item line ever targets the .pholama data folder', !ps.split('\n').some(l => /Remove-Item/.test(l) && /\.pholama/.test(l)));
+ok('windows: the old wrong folder name Pholama-main is gone', !/'Pholama-main'/.test(ps));
+ok('windows: the unpacked folder is found by looking for server\\cli.js', /Get-ChildItem \$tmp -Directory[\s\S]{0,200}Test-Path \(Join-Path \$d\.FullName 'server\\cli\.js'\)/.test(ps));
+ok('windows: the real name Pholama-PC-main is the fallback', /Pholama-PC-main/.test(ps));
+ok('windows: old failed attempts are cleaned before anything starts', /function Clean-OldAttempts/.test(ps) && ps.indexOf('\nClean-OldAttempts') > 0 && ps.indexOf('\nClean-OldAttempts') < ps.indexOf('Downloading Pholama to'));
+ok('windows: only leftovers of its own naming are removed from TEMP (exact names, not a wildcard)', /\^\(pholama_\[0-9a-f\]\{32\}\|nodex_\[0-9a-f\]\{32\}\|node_\[0-9a-f\]\{32\}\\\.zip\)\$/.test(ps));
+ok('windows: leftovers newer than 10 minutes are kept (another window may be installing)', /AddMinutes\(-10\)/.test(ps) && /LastWriteTime -lt \$cut/.test(ps));
+ok('windows: a half-finished install is cleaned only when server\\cli.js is missing', /Test-Path \$dir\) -and -not \(Test-Path \(Join-Path \$dir 'server\\cli\.js'\)\)/.test(ps));
+ok('windows: the cleanup keeps node_modules and never names .pholama', /-ne 'node_modules'/.test(ps.split('function Clean-OldAttempts')[1].split('Clean-OldAttempts\n')[0]));
+ok('windows: the cleanup is wrapped so a locked file can never stop the install', (ps.split('function Clean-OldAttempts')[1].split('\nClean-OldAttempts')[0].match(/try \{/g) || []).length >= 2);
 ok('windows: the failure paths return instead of continuing', (ps.match(/\n\s*return\n/g) || []).length >= 3);
 
 fs.rmSync(root, { recursive: true, force: true });

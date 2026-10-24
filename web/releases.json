@@ -1,6 +1,17 @@
 {
- "latest": "0.9.45",
+ "latest": "0.9.46",
  "releases": [
+  {
+   "version": "0.9.46",
+   "date": "2026-10-24",
+   "title": "Fix: the Windows installer, and Codebase can make files",
+   "notes": [
+    "Fixed the Windows installer saying \"The download was incomplete (server\\cli.js is missing)\". It now finds the program inside the download by itself.",
+    "The installer now cleans up leftovers from earlier attempts that did not finish. A working install, your models and your chats are never touched.",
+    "Codebase can now make pictures, speech, music and 3D models from a picture. They are saved only in folders you allowed for writing, and never overwrite a file.",
+    "A picture costs 45 credits, music 45, 3D 90 and speech 25. If a file cannot be made you are not charged, and long waits stop by themselves."
+   ]
+  },
   {
    "version": "0.9.45",
    "date": "2026-10-24",

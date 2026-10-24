@@ -28,18 +28,29 @@ if ! command -v node >/dev/null 2>&1 || [ "$(node -p 'process.versions.node.spli
 fi
 command -v curl >/dev/null 2>&1 || { say "curl is needed."; exit 1; }
 command -v tar >/dev/null 2>&1 || { say "tar is needed."; exit 1; }
+# Clean up after older attempts that did not finish: a half-finished install folder (no server/cli.js in it).
+# A working install is never touched here. Leftover temp folders are removed by the trap below on every normal exit.
+if [ -d "$DIR" ] && [ ! -f "$DIR/server/cli.js" ]; then
+  if [ -n "$(find "$DIR" -mindepth 1 -maxdepth 1 ! -name node_modules 2>/dev/null | head -1)" ]; then
+    find "$DIR" -mindepth 1 -maxdepth 1 ! -name node_modules -exec rm -rf {} + 2>/dev/null || true
+    say "Cleaned up leftover files from an earlier attempt that did not finish."
+  fi
+fi
 say "Downloading Pholama to $DIR ..."
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 if ! curl -fsSL "$TAR" -o "$TMP/p.tgz"; then say "Could not download Pholama. Check your internet connection and run the command again."; exit 1; fi
 if ! tar -xzf "$TMP/p.tgz" -C "$TMP"; then say "The download was damaged. Run the command again."; exit 1; fi
 # Never touch an existing install unless the download really unpacked into a complete Pholama.
+# GitHub names the folder after the repo and branch (Pholama-PC-main) and that name has changed before: find it by looking, never by a fixed name.
+SRC=""; for d in "$TMP"/*/; do [ -f "${d}server/cli.js" ] && { SRC="${d%/}"; break; }; done
+[ -n "$SRC" ] || SRC="$TMP/Pholama-PC-main"
 for f in server/cli.js server/server.js models.pc.json; do
-  [ -f "$TMP/Pholama-main/$f" ] || { say "The download was incomplete ($f is missing), so nothing was changed. Run the command again."; exit 1; }
+  [ -f "$SRC/$f" ] || { say "The download was incomplete ($f is missing), so nothing was changed. Run the command again."; exit 1; }
 done
 mkdir -p "$DIR"
 # Reinstall cleanly: remove the old app files first so nothing stale stays. Models and chats live in ~/.pholama, not here.
 find "$DIR" -mindepth 1 -maxdepth 1 ! -name node_modules -exec rm -rf {} + 2>/dev/null || true
-cp -R "$TMP"/Pholama-main/. "$DIR"/
+cp -R "$SRC"/. "$DIR"/
 for f in server/cli.js server/server.js models.pc.json; do
   [ -f "$DIR/$f" ] || { say "Install failed: $f is missing in $DIR. Run the command again."; exit 1; }
 done

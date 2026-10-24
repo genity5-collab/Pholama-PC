@@ -29,14 +29,14 @@ function buildTools(deps) {
   const tools = {};
   for (const meta of T.list()) {
     const name = meta.name;
-    tools[name] = async args => {
+    tools[name] = async (args, ctx) => {
       const pl = PLAN.plan(name, args);
       if (!pl || pl.ok !== true) return 'REFUSED: ' + ((pl && pl.say) || 'not allowed');
       if (pl.kind === 'next_task') return 'Next task started.';
       if (pl.kind === 'note') { if (!deps.notepad) return 'Noted.'; const n = await deps.notepad.note(pl.text); return n.ok ? 'Noted.' + (n.live ? ' (shown in Notepad)' : '') : 'ERROR: ' + n.text; }
       let r;
       if (pl.kind === 'github_read' || pl.kind === 'github_write') r = await github.execute(pl, { token: getGithubToken(), fetchFn });
-      else if (media && typeof media.execute === 'function' && /^make_/.test(name)) r = await media.execute(pl, {});
+      else if (pl.kind === 'make') r = media && typeof media.execute === 'function' ? await media.execute(pl, { signal: ctx && ctx.signal }) : { ok: false, text: 'Making files is not available right now.' };   // a generator never reaches the Windows runner
       else r = await win.execute(pl, { opened, readImage });
       return r && r.ok ? String(r.text == null ? 'Done.' : r.text) : 'ERROR: ' + String((r && r.text) || 'it did not work');
     };
@@ -54,7 +54,8 @@ function create(deps) {
     open: async f => deps.win.execute({ ok: true, kind: 'notepad', path: f }, {}),
     close: async title => deps.win.execute({ ok: true, kind: 'close', title }, {}),   // no 'opened' set is passed, so this closes only the Pholama notes window by its exact title
   }) : null) : deps.notepad;
-  const tools = deps.tools || buildTools({ ...deps, notepad, getGithubToken: deps.getGithubToken || (() => state.gh) });
+  const media = deps.media || require('./codebase-media').create({ getToken: () => state.token, fetchFn, url: deps.mediaUrl, log, onCredits: c => { state.credits = c; } });   // same login as the model, held in memory for one run only
+  const tools = deps.tools || buildTools({ ...deps, media, notepad, getGithubToken: deps.getGithubToken || (() => state.gh) });
   const session = SESSION.create({ model, tools, budget, now });
   // The login lives only as long as the run: when the run ends (done, stopped, out of time or credits) it is wiped.
   const wipeWhenDone = () => { const t = setInterval(() => { const st = session.state(); if (st.done || !st.running) { state.token = ''; state.gh = ''; if (notepad) notepad.finish().catch(() => {}); clearInterval(t); } }, 250); if (t.unref) t.unref(); };

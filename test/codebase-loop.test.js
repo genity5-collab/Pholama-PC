@@ -72,6 +72,25 @@ function rig(script, o = {}) {
   out = await L.run('x', r.deps);
   ok('screenshot 10 + image 45 charged', (r.deps.budget && out.spent === 55));
 
+  // 8b. only a call that worked is counted: a refused or failed generator costs nothing (the cloud gives failed ones back)
+  for (const [label, res] of [['REFUSED', 'REFUSED: That folder is read-only.'], ['ERROR', 'ERROR: It could not be made. You were not charged.']]) {
+    r = rig([tool({ name: 'make_image' }), tool({ name: 'done', summary: 'ok' })]);
+    r.deps.tools.make_image = async () => { r.ran.push('make_image'); return res; };
+    out = await L.run('x', r.deps);
+    ok('a ' + label + ' generator is not counted on the usage bar', out.spent === 0 && !(r.deps.budget.spent), JSON.stringify([out.spent, r.deps.budget]));
+  }
+  r = rig([tool({ name: 'make_image' }), tool({ name: 'done', summary: 'ok' })]);
+  r.deps.tools.make_image = async () => 'Saved image to C:\\p\\a.png (1000 bytes).';
+  out = await L.run('x', r.deps); ok('a generator that worked is still counted (45)', out.spent === 45);
+  r = rig([tool({ name: 'screenshot_' }), tool({ name: 'done', summary: 'ok' })]);
+  r.deps.tools.screenshot_ = async () => 'ERROR: no screen';
+  out = await L.run('x', r.deps); ok('a failed screenshot is not counted either', out.spent === 0);
+  // 8c. Stop reaches the tool, so a long wait can end at once
+  { const ac = new AbortController(); let seen = null;
+    r = rig([tool({ name: 'make_image' }), tool({ name: 'done', summary: 'ok' })]); r.deps.signal = ac.signal;
+    r.deps.tools.make_image = async (args, ctx) => { seen = ctx && ctx.signal; return 'Saved image to x.'; };
+    await L.run('x', r.deps); ok('the run\'s Stop signal is handed to the tool', seen === ac.signal); }
+
   // 9. unknown and inherited tool names
   r = rig([tool({ name: 'constructor' }), tool({ name: 'format_disk' }), tool({ name: 'done', summary: 'ok' })]);
   out = await L.run('x', r.deps);

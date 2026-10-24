@@ -5,6 +5,26 @@ $dir = Join-Path $env:USERPROFILE 'Pholama'
 $zip = 'https://github.com/genity5-collab/Pholama-PC/archive/refs/heads/main.zip'
 function Say($m) { Write-Host ""; Write-Host "  $m" }
 
+# Clean up after older attempts that failed or were closed half-way: leftover download folders and zips in TEMP, and a half-finished install
+# (a Pholama folder that has no server\cli.js). Only things older than 10 minutes are removed, so a second window that is installing right now is never hurt.
+function Clean-OldAttempts {
+  $cut = (Get-Date).AddMinutes(-10); $n = 0
+  try {
+    Get-ChildItem $env:TEMP -Force -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -match '^(pholama_[0-9a-f]{32}|nodex_[0-9a-f]{32}|node_[0-9a-f]{32}\.zip)$' -and $_.LastWriteTime -lt $cut } |
+      ForEach-Object { Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue; $n++ }
+  } catch { }
+  try {
+    # A half-finished install: the folder exists but has no program in it. (A working install is never touched here.)
+    if ((Test-Path $dir) -and -not (Test-Path (Join-Path $dir 'server\cli.js'))) {
+      $keep = Get-ChildItem $dir -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'node_modules' }
+      if ($keep) { $keep | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue; $n++ }
+    }
+  } catch { }
+  if ($n -gt 0) { Say "Cleaned up $n leftover file(s) from an earlier attempt that did not finish." }
+}
+Clean-OldAttempts
+
 # Use the Node.js already on this PC when it is new enough; otherwise fetch a private copy (no install, no admin, nothing system-wide).
 $nodeExe = 'node'
 $ok = $false
@@ -48,7 +68,11 @@ try {
   Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
   return
 }
-$src = Join-Path $tmp 'Pholama-main'
+# GitHub names the folder after the repo and branch (Pholama-PC-main), and that name has changed before, so find it by looking:
+# the unpacked folder that holds the program. Never rely on a fixed name.
+$src = $null
+foreach ($d in (Get-ChildItem $tmp -Directory -ErrorAction SilentlyContinue)) { if (Test-Path (Join-Path $d.FullName 'server\cli.js')) { $src = $d.FullName; break } }
+if (-not $src) { $src = Join-Path $tmp 'Pholama-PC-main' }
 # Never touch an existing install unless the download really unpacked into a complete Pholama.
 foreach ($f in 'server\cli.js','server\server.js','models.pc.json') {
   if (-not (Test-Path (Join-Path $src $f))) {
